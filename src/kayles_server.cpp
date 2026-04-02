@@ -1,34 +1,35 @@
-#include <unistd.h>
+#include <arpa/inet.h>
 #include <inttypes.h>
+#include <unistd.h>
+
+#include <charconv>
+#include <cstring>
+#include <iostream>
+#include <optional>
+#include <stdexcept>
 #include <string>
 #include <vector>
-#include <arpa/inet.h>
-#include <stdexcept>
-#include <iostream>
-#include <cstring>
-#include <charconv>
-#include <optional>
 
 using address_t = in_addr;
 using timeout_t = uint8_t;
 using pawn_row_t = std::vector<bool>;
 
 class KaylesServer {
-private:
+   private:
     // Server configuration
     address_t address;
     uint16_t port;
     timeout_t server_timeout;
     pawn_row_t row;
-    
+
     // Server bindings
     int socket_fd = -1;
     struct sockaddr_in server_address;
-public:
-    KaylesServer(address_t address, uint16_t port,
-                timeout_t server_timeout, pawn_row_t row) : 
-                address(address), port(port), server_timeout(server_timeout), row(row) {};
-    
+
+   public:
+    KaylesServer(address_t address, uint16_t port, timeout_t server_timeout, pawn_row_t row)
+        : address(address), port(port), server_timeout(server_timeout), row(row){};
+
     ~KaylesServer() {
         shut();
     }
@@ -42,7 +43,8 @@ public:
         server_address.sin_addr = address;
         server_address.sin_port = htons(port);
 
-        if (bind(socket_fd, (struct sockaddr *) &server_address, (socklen_t) sizeof(server_address)) < 0) {
+        if (bind(socket_fd, (struct sockaddr *)&server_address, (socklen_t)sizeof(server_address)) <
+            0) {
             throw std::runtime_error("bind failed");
         }
 
@@ -55,13 +57,12 @@ public:
         }
     }
 
-    void run_server_loop() {
-
-    }
+    void run_server_loop() {}
 
     void run() {
         std::cerr << "Server loop started.\n";
-        for (;;) run_server_loop();
+        for (;;)
+            run_server_loop();
     }
 };
 
@@ -76,7 +77,7 @@ static std::optional<pawn_row_t> string_to_pawn_row(const std::string_view &s) {
     if (s.size() < 1 || s.size() > 256) {
         return std::nullopt;
     }
-    
+
     pawn_row_t res(s.size());
     for (size_t i = 0; i < s.size(); i++) {
         if (s[i] != '0' && s[i] != '1') {
@@ -90,7 +91,7 @@ static std::optional<pawn_row_t> string_to_pawn_row(const std::string_view &s) {
     }
 
     return res;
-} 
+}
 
 int main(int argc, char *argv[]) {
     pawn_row_t row;
@@ -114,7 +115,8 @@ int main(int argc, char *argv[]) {
                 row = std::move(opt_vec.value());
                 has_row = true;
                 break;
-            } case 'a': {
+            }
+            case 'a': {
                 int result = inet_pton(AF_INET, optarg, &address);
                 if (result == 0) {
                     std::cerr << "Invalid IP address format.\n";
@@ -125,7 +127,8 @@ int main(int argc, char *argv[]) {
                 }
                 has_address = true;
                 break;
-            } case 'p': {
+            }
+            case 'p': {
                 char *end_ptr = optarg + std::strlen(optarg);
                 auto [ptr, ec] = std::from_chars(optarg, end_ptr, port);
 
@@ -135,11 +138,13 @@ int main(int argc, char *argv[]) {
                 }
                 has_port = true;
                 break;
-            } case 't': {
+            }
+            case 't': {
                 char *end_ptr = optarg + std::strlen(optarg);
                 auto [ptr, ec] = std::from_chars(optarg, end_ptr, server_timeout);
-                
-                if (!(ec == std::errc() && ptr == end_ptr && server_timeout >= 1 && server_timeout <= 99)) {
+
+                if (!(ec == std::errc() && ptr == end_ptr && server_timeout >= 1 &&
+                      server_timeout <= 99)) {
                     std::cerr << "Invalid server timeout.";
                     return 1;
                 }
