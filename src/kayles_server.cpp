@@ -2,6 +2,8 @@
 #include <inttypes.h>
 #include <unistd.h>
 
+#include <algorithm>
+#include <cassert>
 #include <charconv>
 #include <cstring>
 #include <iostream>
@@ -13,6 +15,140 @@
 using address_t = in_addr;
 using timeout_t = uint8_t;
 using pawn_row_t = std::vector<bool>;
+
+class Game {
+   public:
+    enum class Status : uint8_t { WAITING_FOR_OPPONENT, TURN_A, TURN_B, WIN_A, WIN_B };
+
+   private:
+    uint32_t game_id;
+    uint32_t player_a_id;
+    uint32_t player_b_id = 0;
+    time_t player_a_last_move_time;
+    time_t player_b_last_move_time = 0;
+
+    Status status;
+    uint8_t max_pawn;
+    pawn_row_t pawn_row;
+    uint8_t pawns_left_in_row;
+
+    bool check_if_my_turn(uint32_t player_id) {
+        return (player_id == player_a_id && status == Status::TURN_A) ||
+               (player_id == player_b_id && status == Status::TURN_B);
+    }
+
+    void take_pawn(uint32_t pawn) {
+        if (pawn > max_pawn || !pawn_row[pawn]) {
+            return;
+        }
+        pawn_row[pawn] = 0;
+        pawns_left_in_row--;
+    }
+
+    bool take_two_consecutive_pawns(uint32_t first_pawn) {
+        if (first_pawn + 1 > max_pawn || !pawn_row[first_pawn] || !pawn_row[first_pawn + 1]) {
+            return;
+        }
+        pawn_row[first_pawn] = pawn_row[first_pawn + 1] = 0;
+        pawns_left_in_row -= 2;
+    }
+
+   public:
+    Game(uint32_t game_id, uint32_t player_a_id, uint8_t max_pawn, pawn_row_t pawn_row)
+        : game_id(game_id),
+          player_a_id(player_a_id),
+          max_pawn(max_pawn),
+          pawn_row(pawn_row),
+          status(Status::WAITING_FOR_OPPONENT),
+          player_a_last_move_time(time(NULL)) {
+        if (player_a_id == 0) {
+            throw std::invalid_argument("Player id must be positive.");
+        }
+        pawns_left_in_row = std::count(pawn_row.begin(), pawn_row.end(), 1);
+    };
+
+    // Updates player move time.
+    void keep_alive(uint32_t player_id) {
+        if (player_id == player_a_id) {
+            player_a_last_move_time = time(NULL);
+        }
+        if (player_id == player_b_id) {
+            player_b_last_move_time = time(NULL);
+        }
+    }
+
+    void join_player_b(uint32_t player_b_id) {
+        if (player_b_id == 0) {
+            throw std::invalid_argument("Player id must be positive.");
+        }
+        assert(this->player_b_id == 0);
+        this->player_b_id = player_b_id;
+        player_b_last_move_time = time(NULL);
+        status = Status::TURN_B;
+    }
+
+    void give_up(uint32_t player_id) {
+        keep_alive(player_id);
+        if (player_id == player_a_id && status == Status::TURN_A) {
+            status = Status::WIN_B;
+        }
+        if (player_id == player_b_id && status == Status::TURN_B) {
+            status = Status::WIN_A;
+        }
+    }
+
+    // no_of_pawns: 1 or 2
+    void move(uint32_t player_id, uint8_t pawn, uint8_t no_of_pawns) {
+        keep_alive(player_id);
+        if (!check_if_my_turn(player_id)) {
+            return;
+        }
+
+        if (no_of_pawns == 1)
+            take_pawn(pawn);
+        else if (no_of_pawns == 2)
+            take_two_consecutive_pawns(pawn);
+        else
+            assert(false);
+
+        if (pawns_left_in_row == 0) {
+            if (player_id == player_a_id)
+                status = Status::WIN_A;
+            else
+                status = Status::WIN_B;
+        }
+
+        if (status == Status::TURN_A)
+            status = Status::TURN_B;
+        if (status == Status::TURN_B)
+            status = Status::TURN_A;
+    }
+
+    bool is_player_joined(uint32_t player_id) {
+        return player_id == player_a_id || player_id == player_b_id;
+    }
+
+    // Checks if the game can be qualified as
+    // stale according to server_timeout
+    // and deleted.
+    bool is_stale(timeout_t server_timeout) {
+        switch (status) {
+            case Status::TURN_A:
+                if (time(NULL) - player_a_last_move_time > server_timeout) {
+                    status = Status::WIN_B;
+                }
+                return false;
+            case Status::TURN_B:
+                if (time(NULL) - player_b_last_move_time - server_timeout) {
+                    status = Status::WIN_A;
+                }
+                return false;
+            default:
+                return (std::max(time(NULL) - player_a_last_move_time,
+                                 time(NULL) - player_b_last_move_time) > server_timeout);
+        }
+    }
+};
 
 class KaylesServer {
    private:
@@ -54,6 +190,7 @@ class KaylesServer {
     void shut() {
         if (socket_fd >= 0) {
             close(socket_fd);
+            socket_fd = -1;
         }
     }
 
@@ -61,8 +198,9 @@ class KaylesServer {
 
     void run() {
         std::cerr << "Server loop started.\n";
-        for (;;)
+        for (;;) {
             run_server_loop();
+        }
     }
 };
 
@@ -92,6 +230,9 @@ static std::optional<pawn_row_t> string_to_pawn_row(const std::string_view &s) {
 
     return res;
 }
+
+static std::string USAGE_STR =
+    "Usage: ./kayles-server -r <row> -p <port> -a <address> -t <server_timeout>\n";
 
 int main(int argc, char *argv[]) {
     pawn_row_t row;
@@ -145,17 +286,23 @@ int main(int argc, char *argv[]) {
 
                 if (!(ec == std::errc() && ptr == end_ptr && server_timeout >= 1 &&
                       server_timeout <= 99)) {
-                    std::cerr << "Invalid server timeout.";
+                    std::cerr << "Invalid server timeout.\n";
                     return 1;
                 }
                 has_timeout = true;
                 break;
             }
+            default: {
+                std::cerr << USAGE_STR;
+                return 1;
+            }
         }
     }
     if (!has_row || !has_port || !has_address || !has_timeout) {
-        std::cerr << "Usage: ./kayles-server -r <row> -p <port> -a <address> -t <server_timeout>\n";
+        std::cerr << USAGE_STR;
         return 1;
     }
+
+    KaylesServer server(address, port, server_timeout, row);
     return 0;
 }

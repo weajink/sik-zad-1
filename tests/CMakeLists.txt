@@ -6,4 +6,10 @@
 
 add_executable(test_server_parsing test_server_parsing.cpp)
 target_link_libraries(test_server_parsing PRIVATE GTest::gtest_main)
+target_compile_options(test_server_parsing PRIVATE -Wno-return-type -Wno-reorder -fpermissive -Wno-error)
 add_test(NAME test_server_parsing COMMAND test_server_parsing)
+
+add_executable(test_game test_game.cpp)
+target_link_libraries(test_game PRIVATE GTest::gtest_main)
+target_compile_options(test_game PRIVATE -Wno-return-type -Wno-reorder -fpermissive -Wno-error)
+add_test(NAME test_game COMMAND test_game)
