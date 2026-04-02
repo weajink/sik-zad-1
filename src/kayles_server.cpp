@@ -41,7 +41,7 @@ class Game {
         if (pawn > max_pawn || !pawn_row[pawn]) {
             return false;
         }
-        pawn_row[pawn] = 0;
+        pawn_row[pawn] = false;
         pawns_left_in_row--;
         return true;
     }
@@ -50,7 +50,7 @@ class Game {
         if (first_pawn + 1 > max_pawn || !pawn_row[first_pawn] || !pawn_row[first_pawn + 1]) {
             return false;
         }
-        pawn_row[first_pawn] = pawn_row[first_pawn + 1] = 0;
+        pawn_row[first_pawn] = pawn_row[first_pawn + 1] = false;
         pawns_left_in_row -= 2;
         return true;
     }
@@ -66,8 +66,8 @@ class Game {
         if (player_a_id == 0) {
             throw std::invalid_argument("Player id must be positive.");
         }
-        pawns_left_in_row = std::count(pawn_row.begin(), pawn_row.end(), 1);
-    };
+        pawns_left_in_row = std::count(pawn_row.begin(), pawn_row.end(), true);
+    }
 
     // Updates player move time.
     void keep_alive(uint32_t player_id) {
@@ -93,8 +93,7 @@ class Game {
         keep_alive(player_id);
         if (player_id == player_a_id && status == Status::TURN_A) {
             status = Status::WIN_B;
-        }
-        if (player_id == player_b_id && status == Status::TURN_B) {
+        } else if (player_id == player_b_id && status == Status::TURN_B) {
             status = Status::WIN_A;
         }
     }
@@ -120,6 +119,7 @@ class Game {
                 status = Status::WIN_A;
             else
                 status = Status::WIN_B;
+            return;
         }
 
         if (status == Status::TURN_A)
@@ -135,7 +135,7 @@ class Game {
     // Checks if the game can be qualified as
     // stale according to server_timeout
     // and deleted.
-    bool is_stale(timeout_t server_timeout) {
+    bool check_timeouts(timeout_t server_timeout) {
         switch (status) {
             case Status::TURN_A:
                 if (time(NULL) - player_a_last_move_time > server_timeout) {
@@ -148,6 +148,7 @@ class Game {
                 }
                 return false;
             default:
+                // std::min of time differences = time since the most recent message
                 return (std::min(time(NULL) - player_a_last_move_time,
                                  time(NULL) - player_b_last_move_time) > server_timeout);
         }
@@ -168,7 +169,7 @@ class KaylesServer {
 
    public:
     KaylesServer(address_t address, uint16_t port, timeout_t server_timeout, pawn_row_t row)
-        : address(address), port(port), server_timeout(server_timeout), row(row){};
+        : address(address), port(port), server_timeout(server_timeout), row(row) {}
 
     ~KaylesServer() {
         shut();
@@ -236,7 +237,7 @@ static std::optional<pawn_row_t> string_to_pawn_row(const std::string_view &s) {
 }
 
 constexpr std::string_view USAGE_STR =
-    "Usage: ./kayles-server -r <row> -p <port> -a <address> -t <server_timeout>\n";
+    "Usage: ./kayles_server -r <row> -p <port> -a <address> -t <server_timeout>\n";
 
 int main(int argc, char *argv[]) {
     pawn_row_t row;
@@ -277,7 +278,7 @@ int main(int argc, char *argv[]) {
                 char *end_ptr = optarg + std::strlen(optarg);
                 auto [ptr, ec] = std::from_chars(optarg, end_ptr, port);
 
-                if (!(ec == std::errc() && ptr == end_ptr && port != 0)) {
+                if (!(ec == std::errc() && ptr == end_ptr)) {
                     std::cerr << "Invalid port name.\n";
                     return 1;
                 }

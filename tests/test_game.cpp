@@ -346,7 +346,7 @@ TEST(GameIsStale, ActiveGameNotStaleImmediately) {
     Game g(0, 1, 1, row);
     g.join_player_b(2);
     // Game just started, should not be stale with a large timeout.
-    EXPECT_FALSE(g.is_stale(99));
+    EXPECT_FALSE(g.check_timeouts(99));
 }
 
 // --- Edge cases ---
