@@ -32,35 +32,37 @@ class Game {
     pawn_row_t pawn_row;
     uint8_t pawns_left_in_row;
 
-    bool check_if_my_turn(uint32_t player_id) {
+    bool check_if_my_turn(uint32_t player_id) const {
         return (player_id == player_a_id && status == Status::TURN_A) ||
                (player_id == player_b_id && status == Status::TURN_B);
     }
 
-    void take_pawn(uint32_t pawn) {
+    bool take_pawn(uint32_t pawn) {
         if (pawn > max_pawn || !pawn_row[pawn]) {
-            return;
+            return false;
         }
         pawn_row[pawn] = 0;
         pawns_left_in_row--;
+        return true;
     }
 
     bool take_two_consecutive_pawns(uint32_t first_pawn) {
         if (first_pawn + 1 > max_pawn || !pawn_row[first_pawn] || !pawn_row[first_pawn + 1]) {
-            return;
+            return false;
         }
         pawn_row[first_pawn] = pawn_row[first_pawn + 1] = 0;
         pawns_left_in_row -= 2;
+        return true;
     }
 
    public:
     Game(uint32_t game_id, uint32_t player_a_id, uint8_t max_pawn, pawn_row_t pawn_row)
         : game_id(game_id),
           player_a_id(player_a_id),
-          max_pawn(max_pawn),
-          pawn_row(pawn_row),
+          player_a_last_move_time(time(NULL)),
           status(Status::WAITING_FOR_OPPONENT),
-          player_a_last_move_time(time(NULL)) {
+          max_pawn(max_pawn),
+          pawn_row(pawn_row) {
         if (player_a_id == 0) {
             throw std::invalid_argument("Player id must be positive.");
         }
@@ -104,11 +106,13 @@ class Game {
             return;
         }
 
-        if (no_of_pawns == 1)
-            take_pawn(pawn);
-        else if (no_of_pawns == 2)
-            take_two_consecutive_pawns(pawn);
-        else
+        if (no_of_pawns == 1) {
+            if (!take_pawn(pawn))
+                return;
+        } else if (no_of_pawns == 2) {
+            if (!take_two_consecutive_pawns(pawn))
+                return;
+        } else
             assert(false);
 
         if (pawns_left_in_row == 0) {
@@ -120,7 +124,7 @@ class Game {
 
         if (status == Status::TURN_A)
             status = Status::TURN_B;
-        if (status == Status::TURN_B)
+        else if (status == Status::TURN_B)
             status = Status::TURN_A;
     }
 
@@ -139,12 +143,12 @@ class Game {
                 }
                 return false;
             case Status::TURN_B:
-                if (time(NULL) - player_b_last_move_time - server_timeout) {
+                if (time(NULL) - player_b_last_move_time > server_timeout) {
                     status = Status::WIN_A;
                 }
                 return false;
             default:
-                return (std::max(time(NULL) - player_a_last_move_time,
+                return (std::min(time(NULL) - player_a_last_move_time,
                                  time(NULL) - player_b_last_move_time) > server_timeout);
         }
     }
@@ -231,7 +235,7 @@ static std::optional<pawn_row_t> string_to_pawn_row(const std::string_view &s) {
     return res;
 }
 
-static std::string USAGE_STR =
+constexpr std::string_view USAGE_STR =
     "Usage: ./kayles-server -r <row> -p <port> -a <address> -t <server_timeout>\n";
 
 int main(int argc, char *argv[]) {
