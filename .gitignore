@@ -3,3 +3,6 @@ compile_commands.json
 .cache/
 *.o
 *.d
+src/kayles_server
+src/kayles_client
+.claude/
