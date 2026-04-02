@@ -1,5 +1,6 @@
 #include <arpa/inet.h>
 #include <inttypes.h>
+#include <kayles_common.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -10,13 +11,15 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
+using namespace kayles_common;
 
 using address_t = in_addr;
 using timeout_t = uint8_t;
 using pawn_row_t = std::vector<bool>;
 
-class Game {
+class KaylesGame {
    public:
     enum class Status : uint8_t { WAITING_FOR_OPPONENT, TURN_A, TURN_B, WIN_A, WIN_B };
 
@@ -56,7 +59,7 @@ class Game {
     }
 
    public:
-    Game(uint32_t game_id, uint32_t player_a_id, uint8_t max_pawn, pawn_row_t pawn_row)
+    KaylesGame(uint32_t game_id, uint32_t player_a_id, uint8_t max_pawn, pawn_row_t pawn_row)
         : game_id(game_id),
           player_a_id(player_a_id),
           player_a_last_move_time(time(NULL)),
@@ -128,7 +131,7 @@ class Game {
             status = Status::TURN_A;
     }
 
-    bool is_player_joined(uint32_t player_id) {
+    bool is_player_joined(uint32_t player_id) const {
         return player_id == player_a_id || player_id == player_b_id;
     }
 
@@ -152,6 +155,45 @@ class Game {
                 return (std::min(time(NULL) - player_a_last_move_time,
                                  time(NULL) - player_b_last_move_time) > server_timeout);
         }
+    }
+
+    // maybe should be something like message_t
+    std::vector<uint8_t> get_game_state() {
+        size_t bitmap_size = max_pawn / 8 + 1;
+        size_t game_state_size =
+            GAME_ID_SIZE + 2 * PLAYER_ID_SIZE + STATUS_SIZE + PAWN_SIZE + bitmap_size;
+
+        std::vector<uint8_t> res(game_state_size);
+        size_t offset = 0;
+        // 1. game_id
+        uint32_t game_id_n = htonl(game_id);
+        std::memcpy(res.data() + offset, &game_id_n, GAME_ID_SIZE);
+        offset += GAME_ID_SIZE;
+        // 2. player_a_id
+        uint32_t player_a_id_n = htonl(player_a_id);
+        std::memcpy(res.data() + offset, &player_a_id_n, PLAYER_ID_SIZE);
+        offset += PLAYER_ID_SIZE;
+        // 3. player_b_id
+        uint32_t player_b_id_n = htonl(player_b_id);
+        std::memcpy(res.data() + offset, &player_b_id_n, PLAYER_ID_SIZE);
+        offset += PLAYER_ID_SIZE;
+        // 4. status
+        res[offset] = std::to_underlying(status);
+        offset += STATUS_SIZE;
+        // 5. max_pawn
+        res[offset] = max_pawn;
+        offset += PAWN_SIZE;
+        // 6. pawn row
+        // (might be beneficial to just rewrite pawn_row_t to vector<uint8_t> from vector<bool>)
+        std::vector<uint8_t> bitmap(bitmap_size, 0);
+        for (size_t i = 0; i <= max_pawn; i++) {
+            if (pawn_row[i]) {
+                bitmap[i / 8] |= (1 << (7 - (i % 8)));
+            }
+        }
+        res.insert(res.end(), bitmap.begin(), bitmap.end());
+
+        return res;
     }
 };
 
@@ -199,7 +241,23 @@ class KaylesServer {
         }
     }
 
-    void run_server_loop() {}
+    void run_server_loop() {
+        static char buffer[CLIENT_MESSAGE_SIZE];
+        memset(buffer, 0, sizeof(buffer));
+
+        int flags = 0;
+        struct sockaddr_in client_address;
+        socklen_t address_length = (socklen_t)sizeof(client_address);
+
+        ssize_t received_length = recvfrom(socket_fd, buffer, CLIENT_MESSAGE_SIZE, flags,
+                                           (struct sockaddr *)&client_address, &address_length);
+        if (received_length < 0) {
+            throw std::runtime_error("recvfrom error");
+        }
+
+        // now run get_message_from_buffer and handle
+        // different messages
+    }
 
     void run() {
         std::cerr << "Server loop started.\n";
@@ -229,7 +287,7 @@ static std::optional<pawn_row_t> string_to_pawn_row(const std::string_view &s) {
         res[i] = (s[i] == '1');
     }
 
-    if (res.front() != 1 || res.back() != 1) {
+    if (res.front() != true || res.back() != true) {
         return std::nullopt;
     }
 
@@ -263,6 +321,7 @@ int main(int argc, char *argv[]) {
                 break;
             }
             case 'a': {
+                // TODO: Add handling of domain names, not just IP addresses
                 int result = inet_pton(AF_INET, optarg, &address);
                 if (result == 0) {
                     std::cerr << "Invalid IP address format.\n";
@@ -275,22 +334,16 @@ int main(int argc, char *argv[]) {
                 break;
             }
             case 'p': {
-                char *end_ptr = optarg + std::strlen(optarg);
-                auto [ptr, ec] = std::from_chars(optarg, end_ptr, port);
-
-                if (!(ec == std::errc() && ptr == end_ptr)) {
+                if (!from_chars(optarg, optarg + std::strlen(optarg), port)) {
                     std::cerr << "Invalid port name.\n";
-                    return 1;
                 }
                 has_port = true;
                 break;
             }
             case 't': {
-                char *end_ptr = optarg + std::strlen(optarg);
-                auto [ptr, ec] = std::from_chars(optarg, end_ptr, server_timeout);
-
-                if (!(ec == std::errc() && ptr == end_ptr && server_timeout >= 1 &&
-                      server_timeout <= 99)) {
+                if (!from_chars(optarg, optarg + std::strlen(optarg), server_timeout) ||
+                    !(server_timeout >= MIN_SERVER_TIMEOUT &&
+                      server_timeout <= MAX_SERVER_TIMEOUT)) {
                     std::cerr << "Invalid server timeout.\n";
                     return 1;
                 }
