@@ -15,10 +15,6 @@
 #include <vector>
 using namespace kayles_common;
 
-using address_t = in_addr;
-using timeout_t = uint8_t;
-using pawn_row_t = std::vector<bool>;
-
 class KaylesGame {
    public:
     enum class Status : uint8_t { WAITING_FOR_OPPONENT, TURN_A, TURN_B, WIN_A, WIN_B };
@@ -150,10 +146,12 @@ class KaylesGame {
                     status = Status::WIN_A;
                 }
                 return false;
-            default:
+            default: {
+                time_t now = time(NULL);
                 // std::min of time differences = time since the most recent message
-                return (std::min(time(NULL) - player_a_last_move_time,
-                                 time(NULL) - player_b_last_move_time) > server_timeout);
+                return (std::min(now - player_a_last_move_time, now - player_b_last_move_time) >
+                        server_timeout);
+            }
         }
     }
 
@@ -191,8 +189,7 @@ class KaylesGame {
                 bitmap[i / 8] |= (1 << (7 - (i % 8)));
             }
         }
-        res.insert(res.end(), bitmap.begin(), bitmap.end());
-
+        std::memcpy(res.data() + offset, bitmap.data(), bitmap.size());
         return res;
     }
 };
@@ -335,7 +332,8 @@ int main(int argc, char *argv[]) {
             }
             case 'p': {
                 if (!from_chars(optarg, optarg + std::strlen(optarg), port)) {
-                    std::cerr << "Invalid port name.\n";
+                    std::cerr << "Invalid port number.\n";
+                    return 1;
                 }
                 has_port = true;
                 break;

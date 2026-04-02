@@ -8,11 +8,16 @@
 #include <cstdint>
 #include <cstring>
 #include <expected>
+#include <vector>
 
 namespace kayles_common {
+using address_t = in_addr;
+using timeout_t = uint8_t;
+using pawn_row_t = std::vector<bool>;
+
 // Server constants
-constexpr static uint8_t MIN_SERVER_TIMEOUT = 1;
-constexpr static uint8_t MAX_SERVER_TIMEOUT = 99;
+static constexpr timeout_t MIN_SERVER_TIMEOUT = 1;
+static constexpr timeout_t MAX_SERVER_TIMEOUT = 99;
 
 // Game constants
 constexpr size_t MSG_TYPE_SIZE = 1;
@@ -49,14 +54,15 @@ struct ClientMessage {
     uint8_t pawn;
 };
 
-inline std::expected<ClientMessage, error_index_t> get_message_from_buffer(char *buf, ssize_t len) {
+inline std::expected<ClientMessage, error_index_t> get_message_from_buffer(const char *buf,
+                                                                           size_t len) {
     ClientMessage res{};
     // 1. get message type
-    if (len < static_cast<ssize_t>(MSG_TYPE_SIZE)) {
-        return std::unexpected(static_cast<error_index_t>(len));
+    if (len < MSG_TYPE_SIZE) {
+        return std::unexpected(len);
     }
     size_t offset = 0;
-    uint8_t msg_type = buf[offset];
+    uint8_t msg_type = static_cast<uint8_t>(buf[offset]);
     if (msg_type > MAX_VALID_CLIENT_MESSAGE) {
         return std::unexpected(offset);
     }
@@ -64,38 +70,36 @@ inline std::expected<ClientMessage, error_index_t> get_message_from_buffer(char 
     offset += MSG_TYPE_SIZE;
 
     // 2. get player id
-    if (len < static_cast<ssize_t>(offset + PLAYER_ID_SIZE)) {
-        return std::unexpected(static_cast<error_index_t>(len));
+    if (len < offset + PLAYER_ID_SIZE) {
+        return std::unexpected(len);
     }
-    uint32_t player_id_n;
-    std::memcpy(&player_id_n, buf + offset, PLAYER_ID_SIZE);
-    res.player_id = ntohl(player_id_n);
+    std::memcpy(&res.player_id, buf + offset, PLAYER_ID_SIZE);
+    res.player_id = ntohl(res.player_id);
     offset += PLAYER_ID_SIZE;
 
     // 3. get game id (if not join)
     if (res.msg_type != ClientMessageType::MSG_JOIN) {
-        if (len < static_cast<ssize_t>(offset + GAME_ID_SIZE)) {
-            return std::unexpected(static_cast<error_index_t>(len));
+        if (len < offset + GAME_ID_SIZE) {
+            return std::unexpected(len);
         }
-        uint32_t game_id_n;
-        std::memcpy(&game_id_n, buf + offset, GAME_ID_SIZE);
-        res.game_id = ntohl(game_id_n);
+        std::memcpy(&res.game_id, buf + offset, GAME_ID_SIZE);
+        res.game_id = ntohl(res.game_id);
         offset += GAME_ID_SIZE;
     }
 
     // 4. get pawn (if move)
     if (res.msg_type == ClientMessageType::MSG_MOVE_1 ||
         res.msg_type == ClientMessageType::MSG_MOVE_2) {
-        if (len < static_cast<ssize_t>(offset + PAWN_SIZE)) {
-            return std::unexpected(static_cast<error_index_t>(len));
+        if (len < offset + PAWN_SIZE) {
+            return std::unexpected(len);
         }
         res.pawn = static_cast<uint8_t>(buf[offset]);
         offset += PAWN_SIZE;
     }
 
     // Check if we parsed everything
-    if (offset != static_cast<size_t>(len)) {
-        return std::unexpected(static_cast<error_index_t>(offset));
+    if (offset != len) {
+        return std::unexpected(offset);
     }
 
     return res;
