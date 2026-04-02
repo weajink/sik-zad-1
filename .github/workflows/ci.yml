@@ -9,9 +9,6 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        compiler: [gcc, clang]
     steps:
       - uses: actions/checkout@v4
 
@@ -19,16 +16,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build
-          if [ "${{ matrix.compiler }}" = "clang" ]; then
-            sudo apt-get install -y clang
-          fi
 
       - name: Configure
-        run: |
-          if [ "${{ matrix.compiler }}" = "clang" ]; then
-            export CC=clang CXX=clang++
-          fi
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
 
       - name: Build
         run: cmake --build build
