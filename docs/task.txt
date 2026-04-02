@@ -1,0 +1,121 @@
+1. Sieciowa gra Kayles
+
+Celem zadania jest zaprojektowanie i zaimplementowanie programów serwera i klienta zmodyfikowanej gry Kayles. Jest to prosta gra dwuosobowa. Gracze mają przed sobą rząd pionów (wyimaginowanych kręgli). Gracze wykonują ruchy na przemian. W swoim ruchu gracz może zbić jeden pion (kula rzucona bezpośrednio w kręgiel) lub zbić dwa sąsiednie piony (kula rzucona tak, aby uderzyła dwa sąsiednie kręgle). Wygrywa gracz, który zbija ostatni pion. Modyfikacja gry dotyczy wyboru początkowego układu pionów.
+2. Architektura aplikacji
+
+W grze biorą udział następujące podmioty:
+
+    gracz – użytkownik (na ogół człowiek) podejmujący decyzję, jaki ruch wykonać;
+    klient – program pośredniczący między graczem a serwerem, uruchamiany przez gracza;
+    serwer – program zarządzający logiką gry, przechowujący stany rozgrywek.
+
+Serwer obsługuje symultanicznie wiele rozgrywek. W każdej rozgrywce gra dwóch graczy. Gracz może grać jednocześnie w wielu rozgrywkach. Gracz może grać jako obaj gracze w rozgrywce. Gracz jest identyfikowany za pomocą identyfikatora, który jest liczbą całkowitą z przedziału od 1 do 232−1. Rozgrywka jest identyfikowana za pomocą identyfikatora, który jest liczbą całkowitą z przedziału od 0 do 232−1. Komunikacja między serwerem a klientem jest realizowana za pomocą niżej opisanego protokołu warstwy aplikacji wykorzystującego w warstwie transportowej UDP. Wymagana jest obsługa jedynie IPv4. Wszystkie wielobajtowe wartości są przesyłane w porządku sieciowym. Serwer powinien być jednowątkowym i jednoprocesowym automatem stanowym pobudzanym komunikatami odbieranymi od klientów.
+3. Specyfikacja protokołu komunikacyjnego warstwy aplikacji
+3.1. Stan gry
+
+Dla każdej rozgrywki serwer przechowuje i przesyła stan gry zawierający następujące pola:
+
+    game_id (32-bitowa liczba całkowita nieujemna) – unikalny identyfikator rozgrywki;
+    player_a_id (32-bitowa liczba całkowita nieujemna) – identyfikator gracza A, wartość niezerowa;
+    player_b_id (32-bitowa liczba całkowita nieujemna) – identyfikator gracza B, zero oznacza brak gracza;
+
+    status (8-bitowa liczba całkowita nieujemna) – aktualny etap rozgrywki, możliwe wartości:
+        WAITING_FOR_OPPONENT (0) – do gry podłączony jest gracz A, czekam na podłączenie gracza B;
+        TURN_A (1) – czekam na ruch gracza A;
+        TURN_B (2) – czekam na ruch gracza B;
+        WIN_A (3) – wygrał gracz A;
+        WIN_B (4) – wygrał gracz B;
+
+    max_pawn (8-bitowa liczba całkowita nieujemna) – maksymalny numer piona;
+
+    pawn_row (tablica bajtów o rozmiarze floor(max_pawn/8) + 1) – mapa bitowa reprezentująca rząd pionów, wartości kolejnych bitów oznaczają:
+        1 – na polu jest pion;
+        0 – pole jest puste lub pion został zbity.
+
+Piony w rzędzie są numerowane od 0 do max_pawn. Pion o numerze 0 jest przechowywany w najbardziej znaczącym bicie pierwszego bajtu mapy bitowej. Nadmiarowe bity w mapie bitowej, o indeksach większych niż max_pawn, są wyzerowane.
+3.2. Komunikaty wysyłane przez klienta do serwera
+
+Komunikaty wysyłane przez klienta do serwera zawierają następujące pola:
+
+    msg_type (8-bitowa liczba całkowita nieujemna) – typ komunikatu;
+    player_id (32-bitowa liczba całkowita dodatnia) – identyfikator gracza;
+    game_id (32-bitowa liczba całkowita nieujemna) – unikalny identyfikator rozgrywki;
+    pawn (8-bitowa liczba całkowita nieujemna) – numer piona.
+
+Klient wysyła do serwera następujące typy komunikatów:
+
+    MSG_JOIN – chcę dołączyć do gry, zawiera kolejno pola msg_type o wartości 0, player_id;
+    MSG_MOVE_1 – zbijam jednego piona, zawiera kolejno pola msg_type o wartości 1, player_id, game_id, pawn;
+    MSG_MOVE_2 – zbijam dwa sąsiednie piony, zawiera kolejno pola msg_type o wartości 2, player_id, game_id, pawn, zbijane są piony o numerach pawn i pawn + 1;
+    MSG_KEEP_ALIVE – potwierdzam, że jestem aktywny, zawiera kolejno pola msg_type o wartości 3, player_id, game_id.
+    MSG_GIVE_UP – poddaję się, zawiera kolejno pola msg_type o wartości 4, player_id, game_id.
+
+Komunikaty klienta zawierające pole game_id dotyczą tylko wskazanej rozgrywki i nie mają wpływu na stan innych rozgrywek, w których uczestniczy ten gracz.
+3.3. Komunikaty wysyłane przez serwer do klienta
+
+Serwer w odpowiedzi na poprawny komunikat od klienta odsyła komunikat MSG_GAME_STATE zawierający strukturę stanu gry opisaną w punkcie 3.1. Wyjątkiem jest ignorowanie przez serwer poprawnego MSG_JOIN, jeśli nie może utworzyć nowej rozgrywki, na przykład z powodu braku pamięci lub wyczerpania się identyfikatorów rozgrywki. Komunikat MSG_JOIN jest poprawny, jeśli ma poprawną długość i zawiera niezerową wartość w polu player_id. Inne komunikaty klienta są poprawne, jeśli mają poprawną długość i zawierają poprawne wartości w polach msg_type, player_id i game_id (istnieje podana gra i uczestniczy w niej podany gracz). Komunikat zawierający niepoprawną wartość pola pawn uznaje się za poprawny, ale taki ruch jest nielegalny. Ruch jest nielegalny również wtedy, gdy nie może być wykonany w aktualnym stanie gry lub gdy próbuje go wykonać gracz, którego nie jest kolej (dotyczy to także komunikatu MSG_GIVE_UP).
+
+Jeżeli komunikat odebrany od klienta nie jest poprawny, serwer odpowiada komunikatem MSG_WRONG_MSG:
+
+    12 bajtów zawierających co najwyżej 12 początkowych bajtów komunikatu klienta, nieużyte bajty są wyzerowane;
+    status – 8-bitowa liczba całkowita 255;
+    error_index – 8-bitowa liczba całkowita wskazująca na indeks bajtu, którego serwer nie potrafi zinterpretować w komunikacie od klienta, bajty indeksowane są od zera.
+
+Serwer odsyła komunikat do klienta na adres i numer portu, z których odebrał komunikat od tego klienta.
+4. Uruchamianie programów klienta i serwera
+
+Działanie programów klienta i serwera zależy od parametrów podanych w linii poleceń. Wszystkie opisane poniżej parametry są obowiązkowe i mogą być podane w dowolnej kolejności. Jeśli jakiś parametr jest błędny lub wystąpił błąd podczas inicjowania struktur danych czy inicjowania komunikacji sieciowej, program wypisuje stosowny komunikat na standardowe wyjście diagnostyczne i kończy się kodem 1. Weryfikowanie parametrów powinno być na tyle dokładne, na ile jest to możliwe. Zachowanie programu, gdy któryś z parametrów został podany wielokrotnie, powinno być rozsądne.
+
+Serwer przyjmuje w wierszu poleceń następujące parametry:
+
+    -r pawn_row – napis definiujący początkowy układ pionów, sekwencja znaków 0 (puste pole) lub 1 (pion), niezawierająca żadnych innych symboli; minimalna długość napisu to 1, maksymalna 256; pierwsze pole zawiera pion na pozycji 0; skrajne pola (pierwsze i ostatnie) muszą być równe 1; przykład poprawnego napisu: 11101111011111;
+    -a address – napis reprezentujący adres IP lub nazwę domenową serwera w notacji z kropkami;
+    -p port – numer portu, na którym nasłuchuje serwer, liczba całkowita z przedziału od 0 do 216−1 zapisana przy podstawie 10, zero oznacza dowolny port;
+    -t server_timeout – limit czasu oczekiwania w sekundach na kolejny komunikat od klienta, liczba całkowita z przedziału 1 do 99 zapisana przy podstawie 10.
+
+Klient przyjmuje w wierszu poleceń następujące parametry:
+
+    -a address – napis reprezentujący adres IP lub nazwę domenową serwera w notacji z kropkami;
+    -p port – numer portu serwera, liczba całkowita z przedziału od 1 do 216−1 zapisana przy podstawie 10;
+    -m message – komunikat do wysłania zawierający oddzielone ukośnikiem i zapisane przy podstawie 10 wartości kolejnych pól komunikatu;
+    -t client_timeout – limit czasu w sekundach oczekiwania na odpowiedź serwera, liczba całkowita z przedziału 1 do 99 zapisana przy podstawie 10.
+
+Serwer nasłuchuje na interfejsie, do którego przypisano adres podany za pomocą parametru -a. Podanie 0.0.0.0 oznacza nasłuchiwanie na wszystkich interfejsach. Serwer działa w nieskończonej pętli.
+
+Klient uruchamiany jest przez gracza w celu wysłania komunikatu. Klient oczekuje odpowiedzi serwera z adresu i portu, na które wysłał komunikat. Klient czeka co najwyżej client_timeout sekund na odpowiedź serwera. Jeśli otrzyma odpowiedź, wypisuje ją na standardowe wyjście w postaci czytelnej dla gracza i kończy się kodem 0. Jeśli nie otrzyma odpowiedzi, wypisuje na standardowe wyjście stosowny komunikat i kończy się kodem 0.
+5. Rozgrywka
+5.1. Rozpoczynanie rozgrywki
+
+W danej chwili jest co najwyżej jedna rozgrywka w stanie WAITING_FOR_OPPONENT. Jeśli nie ma takiej rozgrywki, to komunikat MSG_JOIN powoduje utworzenie rozgrywki z graczem A o identyfikatorze z tego komunikatu i bez gracza B. Jeśli jest już taka rozgrywka, to dołącza do niej gracz z identyfikatorem z komunikatu jako gracz B i gra przechodzi do stanu TURN_B. Jeśli upłynie limit czasu server_timeout, gracz A nie przyśle MSG_KEEP_ALIVE i nie pojawi się MSG_JOIN od gracza B, rozgrywka jest kasowana.
+
+Przykładowy scenariusz, gdy początkowo nie ma żadnej rozgrywki w stanie WAITING_FOR_OPPONENT:
+
+    gracz A uruchamia klienta i wysyła MSG_JOIN;
+    serwer tworzy nową instancję stanu gry, generuje unikalny game_id, ustawia player_a_id na otrzymaną wartość, ustawia player_b_id na 0, inicjuje układ pionów, ustawia status na WAITING_FOR_OPPONENT;
+    serwer odsyła MSG_GAME_STATE do klienta gracza A;
+    gracz B uruchamia klienta i wysyła MSG_JOIN;
+    serwer dołącza gracza B do istniejącej gry, ustawia player_b_id na otrzymaną wartość, zmienia status na TURN_B;
+    serwer odsyła MSG_GAME_STATE do klienta gracza B;
+    gracz A dowiaduje się o zmianie stanu gry, wysyłając MSG_KEEP_ALIVE.
+
+5.2. Przebieg rozgrywki
+
+Gracz uruchamia klienta i wysyła komunikat MSG_MOVE_1, MSG_MOVE_2, MSG_KEEP_ALIVE lub MSG_GIVE_UP do serwera i czeka na odpowiedź. Jeśli komunikat jest poprawny, serwer wykonuje ruch i odsyła komunikat MSG_GAME_STATE. Wykonanie ruchu przez serwer polega na sprawdzeniu jego legalności i zmodyfikowaniu stanu gry. Jeśli ruch jest nielegalny, stan gry się nie zmienia. Klient wyświetla odpowiedź serwera na standardowe wyjście. Drugi gracz dowiaduje się o zmianie stanu gry, wysyłając MSG_KEEP_ALIVE.
+5.3. Kończenie rozgrywki
+
+Rozgrywka kończy się, gdy:
+
+    wykonano ostatni ruch i nie ma już pionów – wygrywa gracz, który wykonał ten ruch;
+    gracz poddał się, wysyłając MSG_GIVE_UP;
+    któryś z graczy nie przysłał żadnego poprawnego komunikatu z identyfikatorem tej rozgrywki przez server_timeout – ten gracz przegrywa.
+
+Po zakończeniu rozgrywki serwer ustawia status gry odpowiednio na WIN_A lub WIN_B. Serwer utrzymuje stan zakończonej rozgrywki przez server_timeout sekund od momentu otrzymania poprawnego komunikatu od któregoś z graczy, którzy uczestniczyli w tej rozgrywce.
+6. Rozwiązanie
+
+Rozwiązanie należy zaimplementować w języku C lub C++, korzystając z interfejsu gniazd. Nie wolno korzystać z żadnych innych bibliotek realizujących komunikację sieciową. Nie wolno korzystać z wieloprocesowości, wielowątkowości ani z funkcji poll lub select. Program ma się kompilować i uruchamiać w laboratorium komputerowym.
+
+Obsługę limitu czasu w programie klienta można zrealizować za pomocą opcji gniazda. Obsługa limitu czasu przez serwer może odbywać się przy okazji obsługi komunikatów odbieranych od klientów.
+
+Programy powinny być napisane zgodnie ze sztuką. Brak oczywistych oczekiwań wobec programów (np. że nie sformatują dysku, czy że wartości zwracane przez funkcje systemowe są sprawdzane) w treści zadania nie oznacza, że program, który ich nie spełnia, będzie uznany za dobry. Protokół będzie testowany rygorystycznie. Będą oceniane kod źródłowy i komunikaty wypisywane na terminal.
+
+Jako rozwiązanie należy przysłać archiwum zawierające pliki niezbędne do zbudowania rozwiązania. Nie wolno załączać plików binarnych i innych zbędnych. Do stworzenia archiwum należy użyć programu zip, rar, 7z lub pary programów tar i gzip. Archiwum powinno mieć odpowiednio rozszerzenie .zip, .rar, .7z lub .tgz. Po rozpakowaniu wszystkie pliki powinny znajdować się w katalogu, w którym jest plik archiwum. Archiwum nie może zawierać podkatalogów. Archiwum powinno zawierać plik makefile lub Makefile. Wykonanie polecenia make powinno stworzyć pliki wykonywalne klienta i serwera: kayles_client i kayles_server. Wykonanie polecenia make clean powinno usunąć wszystkie pliki powstałe podczas kompilowania.

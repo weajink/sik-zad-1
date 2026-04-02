@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug)",
+      "Bash(cmake --build build)",
+      "Bash(ctest --test-dir build --output-on-failure)"
+    ]
+  }
+}

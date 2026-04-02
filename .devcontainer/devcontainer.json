@@ -1,0 +1,20 @@
+{
+  "name": "SIK Zad 1 - C++ UDP",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.cpptools",
+        "ms-vscode.cmake-tools",
+        "xaver.clang-format"
+      ]
+    }
+  },
+  "postCreateCommand": "cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON && ln -sf build/compile_commands.json compile_commands.json",
+  "remoteUser": "vscode"
+}
