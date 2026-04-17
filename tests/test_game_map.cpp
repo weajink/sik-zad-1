@@ -278,3 +278,134 @@ TEST(KaylesGameMap, SamePlayerBothSides) {
     // Knocked the only pawn. It was B's turn, so B wins.
     EXPECT_EQ(result.value().status, 4);  // WIN_B
 }
+
+// --- Game ID sequential assignment ---
+
+TEST(KaylesGameMap, GameIdSequentialAcrossManyGames) {
+    KaylesGameMap gm(60, 0, make_row_1());
+    for (uint32_t i = 0; i < 10; i++) {
+        auto s = gm.join(i * 2 + 1);  // player A
+        EXPECT_EQ(ntohl(s.game_id), i);
+        gm.join(i * 2 + 2);  // player B fills the game
+    }
+}
+
+// --- Multiple concurrent games with interleaved moves ---
+
+TEST(KaylesGameMap, InterleavedMovesAcrossGames) {
+    KaylesGameMap gm(60, 2, make_row_3());
+
+    // Create 3 games
+    gm.join(1); gm.join(2);   // game 0: players 1,2
+    gm.join(3); gm.join(4);   // game 1: players 3,4
+    gm.join(5); gm.join(6);   // game 2: players 5,6
+
+    // Interleaved moves
+    auto r0 = gm.move(2, 0, 0, 1);  // game 0: B moves
+    ASSERT_TRUE(r0.has_value());
+    EXPECT_EQ(r0->status, 1);  // TURN_A
+
+    auto r1 = gm.move(4, 1, 0, 2);  // game 1: B takes two pawns
+    ASSERT_TRUE(r1.has_value());
+    EXPECT_EQ(r1->status, 1);  // TURN_A
+
+    auto r2 = gm.move(6, 2, 0, 1);  // game 2: B moves
+    ASSERT_TRUE(r2.has_value());
+    EXPECT_EQ(r2->status, 1);  // TURN_A
+
+    // Now A moves in game 0
+    auto r0a = gm.move(1, 0, 1, 2);  // game 0: A takes pawns 1,2 -> WIN_A
+    ASSERT_TRUE(r0a.has_value());
+    EXPECT_EQ(r0a->status, 3);  // WIN_A
+
+    // Game 1: A takes remaining pawn
+    auto r1a = gm.move(3, 1, 2, 1);  // game 1: A takes pawn 2 -> WIN_A
+    ASSERT_TRUE(r1a.has_value());
+    EXPECT_EQ(r1a->status, 3);  // WIN_A
+
+    // Game 2 should be unaffected
+    auto check2 = gm.keep_alive(5, 2);
+    ASSERT_TRUE(check2.has_value());
+    EXPECT_EQ(check2->status, 1);  // TURN_A in game 2
+}
+
+// --- JOIN when WAITING game exists but player_id matches player_a ---
+
+TEST(KaylesGameMap, SamePlayerJoinsOwnWaitingGame) {
+    KaylesGameMap gm(60, 2, make_row_3());
+
+    // Player 1 creates a game
+    auto s1 = gm.join(1);
+    EXPECT_EQ(s1.status, 0);  // WAITING_FOR_OPPONENT
+    EXPECT_EQ(ntohl(s1.player_a_id), 1u);
+
+    // Player 1 joins again -> joins as player B (same player both sides)
+    auto s2 = gm.join(1);
+    EXPECT_EQ(s2.status, 2);  // TURN_B
+    EXPECT_EQ(ntohl(s2.player_a_id), 1u);
+    EXPECT_EQ(ntohl(s2.player_b_id), 1u);
+    EXPECT_EQ(ntohl(s2.game_id), 0u);  // same game
+}
+
+// --- Error cases: move/keep_alive/give_up on nonexistent game ---
+
+TEST(KaylesGameMap, MoveOnNonexistentGame) {
+    KaylesGameMap gm(60, 2, make_row_3());
+    // No games created
+    auto result = gm.move(1, 0, 0, 1);
+    ASSERT_FALSE(result.has_value());
+    EXPECT_EQ(result.error(), KaylesGameError::INVALID_GAME_ID);
+}
+
+TEST(KaylesGameMap, KeepAliveOnNonexistentGame) {
+    KaylesGameMap gm(60, 2, make_row_3());
+    auto result = gm.keep_alive(1, 0);
+    ASSERT_FALSE(result.has_value());
+    EXPECT_EQ(result.error(), KaylesGameError::INVALID_GAME_ID);
+}
+
+TEST(KaylesGameMap, GiveUpOnNonexistentGame) {
+    KaylesGameMap gm(60, 2, make_row_3());
+    auto result = gm.give_up(1, 0);
+    ASSERT_FALSE(result.has_value());
+    EXPECT_EQ(result.error(), KaylesGameError::INVALID_GAME_ID);
+}
+
+// --- Timeout-based cleanup: finished game with small timeout ---
+// Note: We can't easily manipulate time(NULL), but we can verify that
+// check_timeouts is called on every operation and that freshly created
+// games are not prematurely deleted.
+
+TEST(KaylesGameMap, FreshGameNotDeletedByTimeout) {
+    // Even with timeout=1, a freshly created game should survive
+    KaylesGameMap gm(1, 2, make_row_3());
+    gm.join(1);
+    gm.join(2);
+
+    // Immediately try to access the game - should still exist
+    auto result = gm.keep_alive(1, 0);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->status, 2);  // TURN_B
+}
+
+TEST(KaylesGameMap, MultipleGamesIndependentPlayerValidation) {
+    // Players from game 0 cannot operate on game 1
+    KaylesGameMap gm(60, 2, make_row_3());
+    gm.join(1); gm.join(2);   // game 0
+    gm.join(3); gm.join(4);   // game 1
+
+    // Player 1 (game 0) tries to move in game 1
+    auto r1 = gm.move(1, 1, 0, 1);
+    ASSERT_FALSE(r1.has_value());
+    EXPECT_EQ(r1.error(), KaylesGameError::INVALID_PLAYER_ID);
+
+    // Player 3 (game 1) tries to give up in game 0
+    auto r2 = gm.give_up(3, 0);
+    ASSERT_FALSE(r2.has_value());
+    EXPECT_EQ(r2.error(), KaylesGameError::INVALID_PLAYER_ID);
+
+    // Player 4 (game 1) tries keep_alive in game 0
+    auto r3 = gm.keep_alive(4, 0);
+    ASSERT_FALSE(r3.has_value());
+    EXPECT_EQ(r3.error(), KaylesGameError::INVALID_PLAYER_ID);
+}

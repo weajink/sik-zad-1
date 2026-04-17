@@ -2,12 +2,15 @@
 #define KAYLES_COMMON_H
 
 #include <arpa/inet.h>
-
+#include <netdb.h>
 #include <charconv>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <vector>
+#include <optional>
+#include <string_view>
+#include <iostream>
 
 namespace kayles_common {
     using address_t = in_addr;
@@ -15,8 +18,8 @@ namespace kayles_common {
     using pawn_row_t = std::vector<bool>;
 
     // Server constants
-    static constexpr timeout_t MIN_SERVER_TIMEOUT = 1;
-    static constexpr timeout_t MAX_SERVER_TIMEOUT = 99;
+    static constexpr timeout_t MIN_TIMEOUT = 1;
+    static constexpr timeout_t MAX_TIMEOUT = 99;
 
     // Game constants
     constexpr size_t MSG_TYPE_SIZE = 1;
@@ -64,11 +67,75 @@ namespace kayles_common {
         uint8_t pawn_row_bitmap[MAX_BITMAP_SIZE];
     };
 
+    constexpr uint8_t MSG_WRONG_STATUS = 255;
     // MSG_WRONG_MSG
     struct __attribute__((__packed__)) WrongMessage {
-        uint8_t client_bytes[12];
-        uint8_t status = 255;
+        uint8_t client_bytes[CLIENT_MESSAGE_SIZE];
+        uint8_t status = MSG_WRONG_STATUS;
         error_index_t error_index;
     };
+
+    std::ostream &operator<<(std::ostream &os, const game_state_t &state) {
+        os << "Game ID: " << ntohl(state.game_id) << "\n";
+        os << "Player A ID: " << ntohl(state.player_a_id) << "\n";
+        os << "Player B ID: " << ntohl(state.player_b_id) << "\n";
+        os << "Status: " << static_cast<int>(state.status) << "\n";
+        os << "Max Pawn: " << static_cast<int>(state.max_pawn) << "\n";
+        os << "Pawn Row: ";
+        for (size_t i = 0; i <= state.max_pawn; ++i) {
+            os << ((state.pawn_row_bitmap[i / 8] >> (7 - (i % 8))) & 1);
+        }
+        return os;
+    }
+
+    std::ostream &operator<<(std::ostream &os, const WrongMessage &msg) {
+        os << "Wrong Message:\n";
+        os << "Client Bytes: ";
+        for (size_t i = 0; i < CLIENT_MESSAGE_SIZE; ++i) {
+            os << std::hex << static_cast<int>(msg.client_bytes[i]) << " ";
+        }
+        os << "\nStatus: " << static_cast<int>(msg.status) << "\n";
+        os << "Error Index: " << static_cast<int>(msg.error_index) << std::dec;
+        return os;
+    }
+
+    inline bool parse_address(address_t &address, std::string_view address_str) {
+        struct addrinfo hints;
+        memset(&hints, 0, sizeof(hints));
+        hints.ai_family = AF_INET;  // IPv4
+        hints.ai_socktype = SOCK_DGRAM;  // UDP
+        hints.ai_protocol = IPPROTO_UDP;
+
+        struct addrinfo *addres_result;
+        int errcode = getaddrinfo(address_str.data(), nullptr, &hints, &addres_result);
+        if (errcode != 0) {
+            std::cerr << "getaddrinfo failed: " << gai_strerror(errcode) << "\n";
+            return false;
+        }
+        
+        address.s_addr = ((struct sockaddr_in *)(addres_result->ai_addr))->sin_addr.s_addr;
+        freeaddrinfo(addres_result);
+        return true;
+    }
+
+    inline std::optional<uint16_t> parse_port(std::string_view port_str) {
+        uint16_t port;
+        if (!from_chars(port_str.data(), port_str.data() + port_str.size(), port)) {
+            std::cerr << "Invalid port format.\n";
+            return std::nullopt;
+        }
+        return port;
+    }
+
+    inline std::optional<timeout_t> parse_timeout(std::string_view timeout_str) {
+        timeout_t timeout;
+        if (!from_chars(timeout_str.data(), timeout_str.data() + timeout_str.size(), timeout) ||
+            !(timeout >= MIN_TIMEOUT &&
+                timeout <= MAX_TIMEOUT)) {
+            std::cerr << "Invalid timeout.\n";
+            return std::nullopt;
+        }
+        return timeout;
+    }
 };  // namespace kayles_common
 #endif

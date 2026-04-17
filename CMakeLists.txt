@@ -8,10 +8,11 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 add_compile_options(-Wall -Wextra -Wpedantic -Werror)
 
-# Source files go in src/, headers in include/
-# Uncomment and adjust as you add files:
-# add_executable(server src/server.cpp)
-# add_executable(client src/client.cpp)
+add_executable(kayles_server src/kayles_server.cpp)
+target_include_directories(kayles_server PRIVATE src)
+
+add_executable(kayles_client src/kayles_client.cpp)
+target_include_directories(kayles_client PRIVATE src)
 
 # --- Testing ---
 option(BUILD_TESTS "Build unit tests" ON)

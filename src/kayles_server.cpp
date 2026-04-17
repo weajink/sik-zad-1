@@ -6,6 +6,7 @@
 #include <iostream>
 #include <optional>
 #include <string>
+#include <getopt.h>
 
 using namespace kayles_common;
 using namespace kayles_server;
@@ -65,33 +66,28 @@ int main(int argc, char *argv[]) {
                 break;
             }
             case 'a': {
-                // TODO: Add handling of domain names, not just IP addresses
-                int result = inet_pton(AF_INET, optarg, &address);
-                if (result == 0) {
-                    std::cerr << "Invalid IP address format.\n";
-                    return 1;
-                } else if (result < 1) {
-                    std::cerr << "inet_pton failed.\n";
+                if (parse_address(address, optarg)) {
+                    has_address = true;
+                } else {
                     return 1;
                 }
-                has_address = true;
                 break;
             }
             case 'p': {
-                if (!from_chars(optarg, optarg + std::strlen(optarg), port)) {
-                    std::cerr << "Invalid port number.\n";
+                auto res = parse_port(optarg);
+                if (!res.has_value()) {
                     return 1;
                 }
+                port = res.value();
                 has_port = true;
                 break;
             }
             case 't': {
-                if (!from_chars(optarg, optarg + std::strlen(optarg), server_timeout) ||
-                    !(server_timeout >= MIN_SERVER_TIMEOUT &&
-                      server_timeout <= MAX_SERVER_TIMEOUT)) {
-                    std::cerr << "Invalid server timeout.\n";
+                auto res = parse_timeout(optarg);
+                if (!res.has_value()) {
                     return 1;
-                }
+                }                
+                server_timeout = res.value();
                 has_timeout = true;
                 break;
             }
@@ -108,5 +104,7 @@ int main(int argc, char *argv[]) {
 
     uint8_t max_pawn = row.size() - 1;
     KaylesServer server(address, port, server_timeout, max_pawn, row);
+    server.start();
+    server.run();
     return 0;
 }

@@ -28,3 +28,8 @@ add_executable(test_game_map test_game_map.cpp)
 target_link_libraries(test_game_map PRIVATE GTest::gtest_main)
 target_include_directories(test_game_map PRIVATE ${PROJECT_SOURCE_DIR}/src)
 add_test(NAME test_game_map COMMAND test_game_map)
+
+add_executable(test_client_parsing test_client_parsing.cpp)
+target_link_libraries(test_client_parsing PRIVATE GTest::gtest_main)
+target_include_directories(test_client_parsing PRIVATE ${PROJECT_SOURCE_DIR}/src)
+add_test(NAME test_client_parsing COMMAND test_client_parsing)

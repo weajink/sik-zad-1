@@ -234,3 +234,174 @@ TEST(ClientMessage, ZeroPlayerIdJoinRejected) {
     ASSERT_FALSE(result.has_value());
     EXPECT_EQ(result.error(), 1);  // error at player_id field offset
 }
+
+// ==================== Exact wire bytes verification ====================
+
+TEST(ClientMessage, WireBytesJoin) {
+    // MSG_JOIN: type=0, player_id=1 in network order
+    // Expected bytes: 00 00 00 00 01
+    char buf[] = {0x00, 0x00, 0x00, 0x00, 0x01};
+    auto result = get_message_from_buffer(buf, 5);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->msg_type, ClientMessageType::MSG_JOIN);
+    EXPECT_EQ(result->player_id, 1u);
+}
+
+TEST(ClientMessage, WireBytesMove1) {
+    // MSG_MOVE_1: type=1, player_id=256 (0x00000100), game_id=0, pawn=7
+    // Bytes: 01  00 00 01 00  00 00 00 00  07
+    char buf[] = {0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07};
+    auto result = get_message_from_buffer(buf, 10);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->msg_type, ClientMessageType::MSG_MOVE_1);
+    EXPECT_EQ(result->player_id, 256u);
+    EXPECT_EQ(result->game_id, 0u);
+    EXPECT_EQ(result->pawn, 7);
+}
+
+TEST(ClientMessage, WireBytesMove2) {
+    // MSG_MOVE_2: type=2, player_id=0xFFFFFFFF, game_id=0x12345678, pawn=0
+    char buf[10];
+    buf[0] = 0x02;
+    uint32_t pid = htonl(0xFFFFFFFF);
+    std::memcpy(buf + 1, &pid, 4);
+    uint32_t gid = htonl(0x12345678);
+    std::memcpy(buf + 5, &gid, 4);
+    buf[9] = 0x00;
+    auto result = get_message_from_buffer(buf, 10);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->msg_type, ClientMessageType::MSG_MOVE_2);
+    EXPECT_EQ(result->player_id, 0xFFFFFFFFu);
+    EXPECT_EQ(result->game_id, 0x12345678u);
+    EXPECT_EQ(result->pawn, 0);
+}
+
+TEST(ClientMessage, WireBytesKeepAlive) {
+    // MSG_KEEP_ALIVE: type=3, player_id=42, game_id=100
+    char buf[9];
+    buf[0] = 0x03;
+    uint32_t pid = htonl(42);
+    std::memcpy(buf + 1, &pid, 4);
+    uint32_t gid = htonl(100);
+    std::memcpy(buf + 5, &gid, 4);
+    auto result = get_message_from_buffer(buf, 9);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->msg_type, ClientMessageType::MSG_KEEP_ALIVE);
+    EXPECT_EQ(result->player_id, 42u);
+    EXPECT_EQ(result->game_id, 100u);
+}
+
+TEST(ClientMessage, WireBytesGiveUp) {
+    // MSG_GIVE_UP: type=4, player_id=1000, game_id=999
+    char buf[9];
+    buf[0] = 0x04;
+    uint32_t pid = htonl(1000);
+    std::memcpy(buf + 1, &pid, 4);
+    uint32_t gid = htonl(999);
+    std::memcpy(buf + 5, &gid, 4);
+    auto result = get_message_from_buffer(buf, 9);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->msg_type, ClientMessageType::MSG_GIVE_UP);
+    EXPECT_EQ(result->player_id, 1000u);
+    EXPECT_EQ(result->game_id, 999u);
+}
+
+// ==================== Exact length vs one byte short ====================
+
+TEST(ClientMessage, JoinExactLengthOk) {
+    auto buf = make_join(1);
+    ASSERT_EQ(buf.size(), 5u);
+    auto result = get_message_from_buffer(buf.data(), buf.size());
+    ASSERT_TRUE(result.has_value());
+}
+
+TEST(ClientMessage, JoinOneByteShort) {
+    auto buf = make_join(1);
+    // Send only 4 bytes instead of 5
+    auto result = get_message_from_buffer(buf.data(), 4);
+    ASSERT_FALSE(result.has_value());
+}
+
+TEST(ClientMessage, Move1ExactLengthOk) {
+    auto buf = make_move1(1, 0, 0);
+    ASSERT_EQ(buf.size(), 10u);
+    auto result = get_message_from_buffer(buf.data(), buf.size());
+    ASSERT_TRUE(result.has_value());
+}
+
+TEST(ClientMessage, Move1OneByteShort) {
+    auto buf = make_move1(1, 0, 0);
+    // Send only 9 bytes instead of 10 (missing pawn byte)
+    auto result = get_message_from_buffer(buf.data(), 9);
+    ASSERT_FALSE(result.has_value());
+}
+
+TEST(ClientMessage, KeepAliveExactLengthOk) {
+    auto buf = make_keep_alive(1, 0);
+    ASSERT_EQ(buf.size(), 9u);
+    auto result = get_message_from_buffer(buf.data(), buf.size());
+    ASSERT_TRUE(result.has_value());
+}
+
+TEST(ClientMessage, KeepAliveOneByteShort) {
+    auto buf = make_keep_alive(1, 0);
+    auto result = get_message_from_buffer(buf.data(), 8);
+    ASSERT_FALSE(result.has_value());
+}
+
+TEST(ClientMessage, GiveUpExactLengthOk) {
+    auto buf = make_give_up(1, 0);
+    ASSERT_EQ(buf.size(), 9u);
+    auto result = get_message_from_buffer(buf.data(), buf.size());
+    ASSERT_TRUE(result.has_value());
+}
+
+TEST(ClientMessage, GiveUpOneByteShort) {
+    auto buf = make_give_up(1, 0);
+    auto result = get_message_from_buffer(buf.data(), 8);
+    ASSERT_FALSE(result.has_value());
+}
+
+// ==================== MSG_JOIN with trailing bytes ====================
+
+TEST(ClientMessage, JoinWithOneTrailingByte) {
+    auto buf = make_join(1);
+    buf.push_back(static_cast<char>(0xFF));  // one extra byte
+    auto result = get_message_from_buffer(buf.data(), buf.size());
+    ASSERT_FALSE(result.has_value());
+    // Error at offset 5 (where parsing stopped, but len=6 != offset=5)
+    EXPECT_EQ(result.error(), 5u);
+}
+
+TEST(ClientMessage, JoinWithManyTrailingBytes) {
+    auto buf = make_join(1);
+    buf.push_back(0x01);
+    buf.push_back(0x02);
+    buf.push_back(0x03);
+    auto result = get_message_from_buffer(buf.data(), buf.size());
+    ASSERT_FALSE(result.has_value());
+    EXPECT_EQ(result.error(), 5u);  // offset where JOIN parsing stopped
+}
+
+// ==================== Zero player_id in non-JOIN messages ====================
+
+TEST(ClientMessage, ZeroPlayerIdMove1Rejected) {
+    auto buf = make_move1(0, 0, 0);
+    auto result = get_message_from_buffer(buf.data(), buf.size());
+    ASSERT_FALSE(result.has_value());
+    EXPECT_EQ(result.error(), 1u);  // error at player_id offset
+}
+
+TEST(ClientMessage, ZeroPlayerIdKeepAliveRejected) {
+    auto buf = make_keep_alive(0, 0);
+    auto result = get_message_from_buffer(buf.data(), buf.size());
+    ASSERT_FALSE(result.has_value());
+    EXPECT_EQ(result.error(), 1u);
+}
+
+TEST(ClientMessage, ZeroPlayerIdGiveUpRejected) {
+    auto buf = make_give_up(0, 0);
+    auto result = get_message_from_buffer(buf.data(), buf.size());
+    ASSERT_FALSE(result.has_value());
+    EXPECT_EQ(result.error(), 1u);
+}

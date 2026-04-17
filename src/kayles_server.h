@@ -149,6 +149,7 @@ namespace kayles_server {
             wrong.error_index = error_index;
             sendto(socket_fd, &wrong, sizeof(wrong), 0, (struct sockaddr *)&client_address,
                    sizeof(client_address));
+            // TODO: Validate sendto result (NOT ONLY HERE)
         }
 
         void run_server_loop() {
