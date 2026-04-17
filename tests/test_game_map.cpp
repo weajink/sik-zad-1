@@ -275,8 +275,6 @@ TEST(KaylesGameMap, SamePlayerBothSides) {
     // Player 42 can move (it's B's turn, and 42 is player B)
     auto result = gm.move(42, 0, 0, 1);
     ASSERT_TRUE(result.has_value());
-    // Knocked the only pawn. Since player_id == player_a_id is checked first
-    // in KaylesGame::move, the win is attributed to A when the same player
-    // occupies both sides.
-    EXPECT_EQ(result.value().status, 3);  // WIN_A
+    // Knocked the only pawn. It was B's turn, so B wins.
+    EXPECT_EQ(result.value().status, 4);  // WIN_B
 }
