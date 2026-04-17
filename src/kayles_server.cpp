@@ -1,7 +1,6 @@
+#include <arpa/inet.h>
 #include <kayles_common.h>
 #include <kayles_server.h>
-
-#include <arpa/inet.h>
 
 #include <cstring>
 #include <iostream>
@@ -71,8 +70,7 @@ int main(int argc, char *argv[]) {
                 if (result == 0) {
                     std::cerr << "Invalid IP address format.\n";
                     return 1;
-                }
-                else if (result < 1) {
+                } else if (result < 1) {
                     std::cerr << "inet_pton failed.\n";
                     return 1;
                 }
@@ -88,10 +86,9 @@ int main(int argc, char *argv[]) {
                 break;
             }
             case 't': {
-                if (!from_chars(optarg, optarg + std::strlen(optarg),
-                                server_timeout) ||
+                if (!from_chars(optarg, optarg + std::strlen(optarg), server_timeout) ||
                     !(server_timeout >= MIN_SERVER_TIMEOUT &&
-                    server_timeout <= MAX_SERVER_TIMEOUT)) {
+                      server_timeout <= MAX_SERVER_TIMEOUT)) {
                     std::cerr << "Invalid server timeout.\n";
                     return 1;
                 }

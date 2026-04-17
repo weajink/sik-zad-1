@@ -1,25 +1,24 @@
 #ifndef KAYLES_SERVER_H
 #define KAYLES_SERVER_H
 
+#include <arpa/inet.h>
 #include <kayles_common.h>
 #include <kayles_game.h>
-
-#include <arpa/inet.h>
 #include <unistd.h>
 
 #include <cassert>
 #include <cstring>
+#include <expected>
 #include <iostream>
 #include <optional>
 #include <stdexcept>
-#include <expected>
 
 using namespace kayles_common;
 using namespace kayles_game;
 
 namespace kayles_server {
-    inline std::expected<ClientMessage, error_index_t>
-    get_message_from_buffer(const char *buf, size_t len) {
+    inline std::expected<ClientMessage, error_index_t> get_message_from_buffer(const char *buf,
+                                                                               size_t len) {
         ClientMessage res{};
         // 1. get message type
         if (len < MSG_TYPE_SIZE) {
@@ -74,7 +73,7 @@ namespace kayles_server {
     }
 
     class KaylesServer {
-      private:
+       private:
         // Server configuration
         address_t address;
         uint16_t port;
@@ -88,13 +87,19 @@ namespace kayles_server {
 
         KaylesGameMap game_map;
 
-      public:
-        KaylesServer(address_t address, uint16_t port, timeout_t server_timeout,
-                     uint8_t max_pawn, pawn_row_t row)
-            : address(address), port(port), server_timeout(server_timeout),
-              max_pawn(max_pawn), row(row), game_map(server_timeout, max_pawn, row) {}
+       public:
+        KaylesServer(address_t address, uint16_t port, timeout_t server_timeout, uint8_t max_pawn,
+                     pawn_row_t row)
+            : address(address),
+              port(port),
+              server_timeout(server_timeout),
+              max_pawn(max_pawn),
+              row(row),
+              game_map(server_timeout, max_pawn, row) {}
 
-        ~KaylesServer() { shut(); }
+        ~KaylesServer() {
+            shut();
+        }
 
         void start() {
             socket_fd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -110,8 +115,7 @@ namespace kayles_server {
                 throw std::runtime_error("bind failed");
             }
 
-            std::cerr << "Server successfully started, listening on port "
-                      << port << ".\n";
+            std::cerr << "Server successfully started, listening on port " << port << ".\n";
         }
 
         void shut() {
@@ -121,8 +125,7 @@ namespace kayles_server {
             }
         }
 
-        std::expected<game_state_t, KaylesGameError>
-        process_message(const ClientMessage &msg) {
+        std::expected<game_state_t, KaylesGameError> process_message(const ClientMessage &msg) {
             switch (msg.msg_type) {
                 case ClientMessageType::MSG_JOIN:
                     return game_map.join(msg.player_id);
@@ -139,13 +142,13 @@ namespace kayles_server {
             }
         }
 
-        void respond_wrong_message(struct sockaddr_in &client_address, 
-            const char *buffer, error_index_t error_index) {
+        void respond_wrong_message(struct sockaddr_in &client_address, const char *buffer,
+                                   error_index_t error_index) {
             WrongMessage wrong{};
             std::memcpy(wrong.client_bytes, buffer, sizeof(wrong.client_bytes));
             wrong.error_index = error_index;
-            sendto(socket_fd, &wrong, sizeof(wrong), 0,
-                   (struct sockaddr *)&client_address, sizeof(client_address));
+            sendto(socket_fd, &wrong, sizeof(wrong), 0, (struct sockaddr *)&client_address,
+                   sizeof(client_address));
         }
 
         void run_server_loop() {
@@ -156,9 +159,8 @@ namespace kayles_server {
             struct sockaddr_in client_address;
             socklen_t address_length = (socklen_t)sizeof(client_address);
 
-            ssize_t received_length =
-                recvfrom(socket_fd, buffer, CLIENT_MESSAGE_SIZE, flags,
-                         (struct sockaddr *)&client_address, &address_length);
+            ssize_t received_length = recvfrom(socket_fd, buffer, CLIENT_MESSAGE_SIZE, flags,
+                                               (struct sockaddr *)&client_address, &address_length);
             if (received_length < 0) {
                 throw std::runtime_error("recvfrom error");
             }
@@ -168,16 +170,18 @@ namespace kayles_server {
                 auto result = process_message(msg.value());
                 if (result.has_value()) {
                     auto &state = result.value();
-                    size_t state_size = sizeof(game_state_t) - MAX_BITMAP_SIZE + (state.max_pawn / 8 + 1);
-                    sendto(socket_fd, &state, state_size, 0,
-                           (struct sockaddr *)&client_address, sizeof(client_address));
+                    size_t state_size =
+                        sizeof(game_state_t) - MAX_BITMAP_SIZE + (state.max_pawn / 8 + 1);
+                    sendto(socket_fd, &state, state_size, 0, (struct sockaddr *)&client_address,
+                           sizeof(client_address));
                 } else {
                     switch (result.error()) {
                         case KaylesGameError::INVALID_PLAYER_ID:
                             respond_wrong_message(client_address, buffer, MSG_TYPE_SIZE);
                             break;
                         case KaylesGameError::INVALID_GAME_ID:
-                            respond_wrong_message(client_address, buffer, MSG_TYPE_SIZE + PLAYER_ID_SIZE);
+                            respond_wrong_message(client_address, buffer,
+                                                  MSG_TYPE_SIZE + PLAYER_ID_SIZE);
                             break;
                         default:
                             std::unreachable();
@@ -196,6 +200,6 @@ namespace kayles_server {
         }
     };
 
-}; // namespace kayles_server
+};  // namespace kayles_server
 
 #endif

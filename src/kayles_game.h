@@ -7,26 +7,20 @@
 #include <cassert>
 #include <cstring>
 #include <ctime>
+#include <expected>
+#include <map>
 #include <stdexcept>
 #include <utility>
 #include <vector>
-#include <map>
-#include <expected>
 
 using namespace kayles_common;
 
 namespace kayles_game {
     class KaylesGame {
-      public:
-        enum class Status : uint8_t {
-            WAITING_FOR_OPPONENT,
-            TURN_A,
-            TURN_B,
-            WIN_A,
-            WIN_B
-        };
+       public:
+        enum class Status : uint8_t { WAITING_FOR_OPPONENT, TURN_A, TURN_B, WIN_A, WIN_B };
 
-      private:
+       private:
         uint32_t game_id;
         uint32_t player_a_id;
         uint32_t player_b_id = 0;
@@ -53,8 +47,7 @@ namespace kayles_game {
         }
 
         bool take_two_consecutive_pawns(uint32_t first_pawn) {
-            if (first_pawn + 1 > max_pawn || !pawn_row[first_pawn] ||
-                !pawn_row[first_pawn + 1]) {
+            if (first_pawn + 1 > max_pawn || !pawn_row[first_pawn] || !pawn_row[first_pawn + 1]) {
                 return false;
             }
             pawn_row[first_pawn] = pawn_row[first_pawn + 1] = false;
@@ -62,18 +55,18 @@ namespace kayles_game {
             return true;
         }
 
-      public:
-        KaylesGame(uint32_t game_id, uint32_t player_a_id, uint8_t max_pawn,
-                   pawn_row_t pawn_row)
-            : game_id(game_id), player_a_id(player_a_id),
+       public:
+        KaylesGame(uint32_t game_id, uint32_t player_a_id, uint8_t max_pawn, pawn_row_t pawn_row)
+            : game_id(game_id),
+              player_a_id(player_a_id),
               player_a_last_move_time(time(NULL)),
-              status(Status::WAITING_FOR_OPPONENT), max_pawn(max_pawn),
+              status(Status::WAITING_FOR_OPPONENT),
+              max_pawn(max_pawn),
               pawn_row(pawn_row) {
             if (player_a_id == 0) {
                 throw std::invalid_argument("Player id must be positive.");
             }
-            pawns_left_in_row =
-                std::count(pawn_row.begin(), pawn_row.end(), true);
+            pawns_left_in_row = std::count(pawn_row.begin(), pawn_row.end(), true);
         }
 
         // Updates player move time.
@@ -100,8 +93,7 @@ namespace kayles_game {
             keep_alive(player_id);
             if (player_id == player_a_id && status == Status::TURN_A) {
                 status = Status::WIN_B;
-            }
-            else if (player_id == player_b_id && status == Status::TURN_B) {
+            } else if (player_id == player_b_id && status == Status::TURN_B) {
                 status = Status::WIN_A;
             }
         }
@@ -116,12 +108,10 @@ namespace kayles_game {
             if (no_of_pawns == 1) {
                 if (!take_pawn(pawn))
                     return;
-            }
-            else if (no_of_pawns == 2) {
+            } else if (no_of_pawns == 2) {
                 if (!take_two_consecutive_pawns(pawn))
                     return;
-            }
-            else
+            } else
                 assert(false);
 
             if (pawns_left_in_row == 0) {
@@ -142,7 +132,9 @@ namespace kayles_game {
             return player_id == player_a_id || player_id == player_b_id;
         }
 
-        Status get_status() const { return status; }
+        Status get_status() const {
+            return status;
+        }
 
         // Checks if the game can be qualified as
         // stale according to server_timeout
@@ -163,8 +155,7 @@ namespace kayles_game {
                     time_t now = time(NULL);
                     // std::min of time differences = time since the most recent
                     // message
-                    return (std::min(now - player_a_last_move_time,
-                                    now - player_b_last_move_time) >
+                    return (std::min(now - player_a_last_move_time, now - player_b_last_move_time) >
                             server_timeout);
                 }
             }
@@ -188,13 +179,10 @@ namespace kayles_game {
         }
     };
 
-    enum class KaylesGameError {
-        INVALID_PLAYER_ID,
-        INVALID_GAME_ID
-    };
+    enum class KaylesGameError { INVALID_PLAYER_ID, INVALID_GAME_ID };
 
     class KaylesGameMap {
-      private:
+       private:
         uint32_t next_game_id = 0;
         std::map<uint32_t, KaylesGame> games;
         timeout_t timeout;
@@ -210,30 +198,31 @@ namespace kayles_game {
                 }
             }
         }
-      public:
-        KaylesGameMap(timeout_t timeout, uint8_t max_pawn, pawn_row_t pawn_row) : 
-            timeout(timeout), max_pawn(max_pawn), pawn_row(pawn_row) {}
+
+       public:
+        KaylesGameMap(timeout_t timeout, uint8_t max_pawn, pawn_row_t pawn_row)
+            : timeout(timeout), max_pawn(max_pawn), pawn_row(pawn_row) {}
 
         game_state_t join(uint32_t player_id) {
             check_timeouts();
 
             // check if the last game is waiting for opponent
-            if (!games.empty() && games.rbegin()->second.get_status() ==
-                                      KaylesGame::Status::WAITING_FOR_OPPONENT) {
+            if (!games.empty() &&
+                games.rbegin()->second.get_status() == KaylesGame::Status::WAITING_FOR_OPPONENT) {
                 auto &game = games.rbegin()->second;
                 game.join_player_b(player_id);
                 return game.get_game_state();
             } else {
                 // or create new game
                 uint32_t game_id = next_game_id++;
-                auto [it, _] = games.emplace(
-                    game_id, KaylesGame(game_id, player_id, max_pawn, pawn_row));
+                auto [it, _] =
+                    games.emplace(game_id, KaylesGame(game_id, player_id, max_pawn, pawn_row));
                 return it->second.get_game_state();
             }
         }
 
         std::expected<game_state_t, KaylesGameError> move(uint32_t player_id, uint32_t game_id,
-                                            uint8_t pawn, uint8_t no_of_pawns) {
+                                                          uint8_t pawn, uint8_t no_of_pawns) {
             check_timeouts();
 
             auto it = games.find(game_id);
@@ -249,7 +238,8 @@ namespace kayles_game {
             return game.get_game_state();
         }
 
-        std::expected<game_state_t, KaylesGameError> keep_alive(uint32_t player_id, uint32_t game_id) {
+        std::expected<game_state_t, KaylesGameError> keep_alive(uint32_t player_id,
+                                                                uint32_t game_id) {
             check_timeouts();
 
             auto it = games.find(game_id);
@@ -281,6 +271,6 @@ namespace kayles_game {
             return game.get_game_state();
         }
     };
-}; // namespace kayles_game
+};  // namespace kayles_game
 
 #endif

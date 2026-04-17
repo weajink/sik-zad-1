@@ -65,10 +65,10 @@ namespace kayles_common {
     };
 
     // MSG_WRONG_MSG
-    struct __attribute__((__packed__)) WrongMessage {                                                         
-      uint8_t client_bytes[12];                                                                             
-      uint8_t status = 255;                                                                               
-      error_index_t error_index;
+    struct __attribute__((__packed__)) WrongMessage {
+        uint8_t client_bytes[12];
+        uint8_t status = 255;
+        error_index_t error_index;
     };
-}; // namespace kayles_common
+};  // namespace kayles_common
 #endif

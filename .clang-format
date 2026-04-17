@@ -4,5 +4,6 @@ ColumnLimit: 100
 AllowShortFunctionsOnASingleLine: Empty
 AllowShortIfStatementsOnASingleLine: Never
 AllowShortLoopsOnASingleLine: false
+NamespaceIndentation: All
 BreakBeforeBraces: Attach
 SpaceBeforeParens: ControlStatements
