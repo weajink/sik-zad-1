@@ -5,16 +5,15 @@
 
 #include <gtest/gtest.h>
 
+using namespace kayles_game;
+
 // ============================================================
 // Tests for get_game_state() serialization.
 // Verifies network byte order, bitmap encoding, correct sizes.
 // ============================================================
 
-// Helper to extract fields from a game state buffer.
-static uint32_t read_u32_network(const std::vector<uint8_t> &buf, size_t offset) {
-    uint32_t val;
-    std::memcpy(&val, buf.data() + offset, 4);
-    return ntohl(val);
+static size_t wire_size(const game_state_t &buf) {
+    return sizeof(game_state_t) - kayles_common::MAX_BITMAP_SIZE + (buf.max_pawn / 8 + 1);
 }
 
 // --- Buffer size ---
@@ -25,7 +24,7 @@ TEST(GameState, BufferSizeMaxPawn0) {
     pawn_row_t row = {1};
     KaylesGame g(0, 1, 0, row);
     auto buf = g.get_game_state();
-    EXPECT_EQ(buf.size(), 15u);
+    EXPECT_EQ(wire_size(buf), 15u);
 }
 
 TEST(GameState, BufferSizeMaxPawn7) {
@@ -34,7 +33,7 @@ TEST(GameState, BufferSizeMaxPawn7) {
     pawn_row_t row = {1, 1, 1, 1, 1, 1, 1, 1};
     KaylesGame g(0, 1, 7, row);
     auto buf = g.get_game_state();
-    EXPECT_EQ(buf.size(), 15u);
+    EXPECT_EQ(wire_size(buf), 15u);
 }
 
 TEST(GameState, BufferSizeMaxPawn8) {
@@ -43,7 +42,7 @@ TEST(GameState, BufferSizeMaxPawn8) {
     pawn_row_t row = {1, 1, 1, 1, 1, 1, 1, 1, 1};
     KaylesGame g(0, 1, 8, row);
     auto buf = g.get_game_state();
-    EXPECT_EQ(buf.size(), 16u);
+    EXPECT_EQ(wire_size(buf), 16u);
 }
 
 TEST(GameState, BufferSizeMaxPawn15) {
@@ -52,7 +51,7 @@ TEST(GameState, BufferSizeMaxPawn15) {
     pawn_row_t row(16, true);
     KaylesGame g(0, 1, 15, row);
     auto buf = g.get_game_state();
-    EXPECT_EQ(buf.size(), 16u);
+    EXPECT_EQ(wire_size(buf), 16u);
 }
 
 // --- Network byte order for IDs ---
@@ -61,14 +60,14 @@ TEST(GameState, GameIdNetworkOrder) {
     pawn_row_t row = {1};
     KaylesGame g(0x01020304, 1, 0, row);
     auto buf = g.get_game_state();
-    EXPECT_EQ(read_u32_network(buf, 0), 0x01020304u);
+    EXPECT_EQ(ntohl(buf.game_id), 0x01020304u);
 }
 
 TEST(GameState, PlayerAIdNetworkOrder) {
     pawn_row_t row = {1};
     KaylesGame g(0, 0xAABBCCDD, 0, row);
     auto buf = g.get_game_state();
-    EXPECT_EQ(read_u32_network(buf, 4), 0xAABBCCDDu);
+    EXPECT_EQ(ntohl(buf.player_a_id), 0xAABBCCDDu);
 }
 
 TEST(GameState, PlayerBIdNetworkOrder) {
@@ -76,14 +75,14 @@ TEST(GameState, PlayerBIdNetworkOrder) {
     KaylesGame g(0, 1, 0, row);
     g.join_player_b(0x11223344);
     auto buf = g.get_game_state();
-    EXPECT_EQ(read_u32_network(buf, 8), 0x11223344u);
+    EXPECT_EQ(ntohl(buf.player_b_id), 0x11223344u);
 }
 
 TEST(GameState, PlayerBIdZeroBeforeJoin) {
     pawn_row_t row = {1};
     KaylesGame g(0, 1, 0, row);
     auto buf = g.get_game_state();
-    EXPECT_EQ(read_u32_network(buf, 8), 0u);
+    EXPECT_EQ(ntohl(buf.player_b_id), 0u);
 }
 
 // --- Status byte ---
@@ -92,7 +91,7 @@ TEST(GameState, StatusWaiting) {
     pawn_row_t row = {1};
     KaylesGame g(0, 1, 0, row);
     auto buf = g.get_game_state();
-    EXPECT_EQ(buf[12], 0);  // WAITING_FOR_OPPONENT
+    EXPECT_EQ(buf.status, 0);  // WAITING_FOR_OPPONENT
 }
 
 TEST(GameState, StatusTurnB) {
@@ -100,7 +99,7 @@ TEST(GameState, StatusTurnB) {
     KaylesGame g(0, 1, 0, row);
     g.join_player_b(2);
     auto buf = g.get_game_state();
-    EXPECT_EQ(buf[12], 2);  // TURN_B
+    EXPECT_EQ(buf.status, 2);  // TURN_B
 }
 
 TEST(GameState, StatusTurnA) {
@@ -109,7 +108,7 @@ TEST(GameState, StatusTurnA) {
     g.join_player_b(2);
     g.move(2, 0, 1);  // B moves, now TURN_A
     auto buf = g.get_game_state();
-    EXPECT_EQ(buf[12], 1);  // TURN_A
+    EXPECT_EQ(buf.status, 1);  // TURN_A
 }
 
 TEST(GameState, StatusWinA) {
@@ -118,7 +117,7 @@ TEST(GameState, StatusWinA) {
     g.join_player_b(2);
     g.give_up(2);
     auto buf = g.get_game_state();
-    EXPECT_EQ(buf[12], 3);  // WIN_A
+    EXPECT_EQ(buf.status, 3);  // WIN_A
 }
 
 TEST(GameState, StatusWinB) {
@@ -127,7 +126,7 @@ TEST(GameState, StatusWinB) {
     g.join_player_b(2);
     g.move(2, 0, 1);  // B takes last pawn
     auto buf = g.get_game_state();
-    EXPECT_EQ(buf[12], 4);  // WIN_B
+    EXPECT_EQ(buf.status, 4);  // WIN_B
 }
 
 // --- max_pawn byte ---
@@ -136,14 +135,14 @@ TEST(GameState, MaxPawnZero) {
     pawn_row_t row = {1};
     KaylesGame g(0, 1, 0, row);
     auto buf = g.get_game_state();
-    EXPECT_EQ(buf[13], 0);
+    EXPECT_EQ(buf.max_pawn, 0);
 }
 
 TEST(GameState, MaxPawn255) {
     pawn_row_t row(256, true);
     KaylesGame g(0, 1, 255, row);
     auto buf = g.get_game_state();
-    EXPECT_EQ(buf[13], 255);
+    EXPECT_EQ(buf.max_pawn, 255);
 }
 
 // --- Bitmap encoding (MSB first) ---
@@ -153,7 +152,7 @@ TEST(GameState, BitmapSinglePawnStanding) {
     pawn_row_t row = {1};
     KaylesGame g(0, 1, 0, row);
     auto buf = g.get_game_state();
-    EXPECT_EQ(buf[14], 0x80);  // pawn 0 = MSB of byte 0
+    EXPECT_EQ(buf.pawn_row_bitmap[0], 0x80);  // pawn 0 = MSB of byte 0
 }
 
 TEST(GameState, BitmapAllEightPawnsStanding) {
@@ -161,7 +160,7 @@ TEST(GameState, BitmapAllEightPawnsStanding) {
     pawn_row_t row = {1, 1, 1, 1, 1, 1, 1, 1};
     KaylesGame g(0, 1, 7, row);
     auto buf = g.get_game_state();
-    EXPECT_EQ(buf[14], 0xFF);
+    EXPECT_EQ(buf.pawn_row_bitmap[0], 0xFF);
 }
 
 TEST(GameState, BitmapMixed) {
@@ -170,7 +169,7 @@ TEST(GameState, BitmapMixed) {
     pawn_row_t row = {1, 0, 1, 0, 1, 0, 1, 0};
     KaylesGame g(0, 1, 7, row);
     auto buf = g.get_game_state();
-    EXPECT_EQ(buf[14], 0xAA);
+    EXPECT_EQ(buf.pawn_row_bitmap[0], 0xAA);
 }
 
 TEST(GameState, BitmapExcessBitsZeroed) {
@@ -180,7 +179,7 @@ TEST(GameState, BitmapExcessBitsZeroed) {
     pawn_row_t row = {1, 0, 1};
     KaylesGame g(0, 1, 2, row);
     auto buf = g.get_game_state();
-    EXPECT_EQ(buf[14], 0xA0);
+    EXPECT_EQ(buf.pawn_row_bitmap[0], 0xA0);
 }
 
 TEST(GameState, BitmapTwoBytes) {
@@ -188,8 +187,8 @@ TEST(GameState, BitmapTwoBytes) {
     pawn_row_t row = {1, 1, 1, 1, 1, 1, 1, 1, 1};
     KaylesGame g(0, 1, 8, row);
     auto buf = g.get_game_state();
-    EXPECT_EQ(buf[14], 0xFF);
-    EXPECT_EQ(buf[15], 0x80);
+    EXPECT_EQ(buf.pawn_row_bitmap[0], 0xFF);
+    EXPECT_EQ(buf.pawn_row_bitmap[1], 0x80);
 }
 
 TEST(GameState, BitmapAfterMove) {
@@ -202,7 +201,7 @@ TEST(GameState, BitmapAfterMove) {
     g.move(2, 0, 1);
     auto buf = g.get_game_state();
     // After removing pawn 0: 0 1 1 1 -> 0x70
-    EXPECT_EQ(buf[14], 0x70);
+    EXPECT_EQ(buf.pawn_row_bitmap[0], 0x70);
 }
 
 TEST(GameState, BitmapAfterTwoConsecutiveMove) {
@@ -214,7 +213,7 @@ TEST(GameState, BitmapAfterTwoConsecutiveMove) {
     g.move(2, 1, 2);
     auto buf = g.get_game_state();
     // After removing pawns 1,2: 1 0 0 1 -> bit7=1, bit6=0, bit5=0, bit4=1 = 0x90
-    EXPECT_EQ(buf[14], 0x90);
+    EXPECT_EQ(buf.pawn_row_bitmap[0], 0x90);
 }
 
 // --- Full round-trip: game_id, player ids, status, max_pawn, bitmap all correct ---
@@ -227,17 +226,17 @@ TEST(GameState, FullRoundTrip) {
     auto buf = g.get_game_state();
 
     // game_id
-    EXPECT_EQ(read_u32_network(buf, 0), 42u);
+    EXPECT_EQ(ntohl(buf.game_id), 42u);
     // player_a_id
-    EXPECT_EQ(read_u32_network(buf, 4), 100u);
+    EXPECT_EQ(ntohl(buf.player_a_id), 100u);
     // player_b_id
-    EXPECT_EQ(read_u32_network(buf, 8), 200u);
+    EXPECT_EQ(ntohl(buf.player_b_id), 200u);
     // status = TURN_B (2)
-    EXPECT_EQ(buf[12], 2);
+    EXPECT_EQ(buf.status, 2);
     // max_pawn = 3
-    EXPECT_EQ(buf[13], 3);
+    EXPECT_EQ(buf.max_pawn, 3);
     // bitmap: 1 0 1 1 -> bit7=1, bit6=0, bit5=1, bit4=1 = 0xB0
-    EXPECT_EQ(buf[14], 0xB0);
-    // Total size: 4+4+4+1+1+1 = 15
-    EXPECT_EQ(buf.size(), 15u);
+    EXPECT_EQ(buf.pawn_row_bitmap[0], 0xB0);
+    // Wire size: 4+4+4+1+1+1 = 15
+    EXPECT_EQ(wire_size(buf), 15u);
 }

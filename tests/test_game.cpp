@@ -5,36 +5,28 @@
 
 #include <gtest/gtest.h>
 
+using namespace kayles_game;
+
 // ============================================================
 // Tests written against the SPEC (CLAUDE.md / docs/task.txt).
 // If a test fails, it indicates a bug in the implementation.
 // ============================================================
 
-// Helper: extract status byte from get_game_state() buffer.
-// Layout: game_id(4) + player_a_id(4) + player_b_id(4) + status(1) + max_pawn(1) + bitmap
+// Helper: extract fields from get_game_state() struct.
 static uint8_t get_status(KaylesGame &g) {
-    auto buf = g.get_game_state();
-    EXPECT_GE(buf.size(), 14u);
-    return buf[12];
+    return g.get_game_state().status;
 }
 
 static uint32_t get_player_a(KaylesGame &g) {
-    auto buf = g.get_game_state();
-    uint32_t val;
-    std::memcpy(&val, buf.data() + 4, 4);
-    return ntohl(val);
+    return ntohl(g.get_game_state().player_a_id);
 }
 
 static uint32_t get_player_b(KaylesGame &g) {
-    auto buf = g.get_game_state();
-    uint32_t val;
-    std::memcpy(&val, buf.data() + 8, 4);
-    return ntohl(val);
+    return ntohl(g.get_game_state().player_b_id);
 }
 
 static uint8_t get_max_pawn(KaylesGame &g) {
-    auto buf = g.get_game_state();
-    return buf[13];
+    return g.get_game_state().max_pawn;
 }
 
 // --- Construction ---
@@ -429,4 +421,14 @@ TEST(GameEdge, MoveAfterGameOver) {
     EXPECT_EQ(get_status(g), 4);
     g.give_up(2);
     EXPECT_EQ(get_status(g), 4);
+}
+
+TEST(GameEdge, SamePlayerBothSides) {
+    pawn_row_t row = {1};
+    KaylesGame g(0, 1, 0, row);
+    g.join_player_b(1);  // same player_id
+    EXPECT_TRUE(g.is_player_joined(1));
+    EXPECT_EQ(get_status(g), 2);  // TURN_B
+    g.move(1, 0, 1);
+    EXPECT_EQ(get_status(g), 4);  // WIN_B
 }

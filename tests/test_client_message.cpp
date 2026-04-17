@@ -1,10 +1,11 @@
 #include <arpa/inet.h>
 #include <gtest/gtest.h>
-#include <kayles_common.h>
+#include <kayles_server.h>
 
 #include <cstring>
 
 using namespace kayles_common;
+using namespace kayles_server;
 
 // Helper: build a valid MSG_JOIN buffer (msg_type=0, player_id in network order).
 // Total size: 1 (type) + 4 (player_id) = 5 bytes.
@@ -225,4 +226,11 @@ TEST(ClientMessage, SingleByteMsgType0) {
     char buf[1] = {0};
     auto result = get_message_from_buffer(buf, 1);
     ASSERT_FALSE(result.has_value());
+}
+
+TEST(ClientMessage, ZeroPlayerIdJoinRejected) {
+    auto buf = make_join(0);
+    auto result = get_message_from_buffer(buf.data(), buf.size());
+    ASSERT_FALSE(result.has_value());
+    EXPECT_EQ(result.error(), 1);  // error at player_id field offset
 }

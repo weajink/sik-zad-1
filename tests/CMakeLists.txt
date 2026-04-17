@@ -23,3 +23,8 @@ add_executable(test_game_state test_game_state.cpp)
 target_link_libraries(test_game_state PRIVATE GTest::gtest_main)
 target_include_directories(test_game_state PRIVATE ${PROJECT_SOURCE_DIR}/src)
 add_test(NAME test_game_state COMMAND test_game_state)
+
+add_executable(test_game_map test_game_map.cpp)
+target_link_libraries(test_game_map PRIVATE GTest::gtest_main)
+target_include_directories(test_game_map PRIVATE ${PROJECT_SOURCE_DIR}/src)
+add_test(NAME test_game_map COMMAND test_game_map)
