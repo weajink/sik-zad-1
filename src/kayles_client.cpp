@@ -1,8 +1,7 @@
+#include <getopt.h>
 #include <kayles_client.h>
-
 #include <sys/socket.h>
 #include <unistd.h>
-#include <getopt.h>
 
 #include <iostream>
 #include <string_view>
@@ -43,7 +42,7 @@ int main(int argc, char *argv[]) {
                 auto res = parse_timeout(optarg);
                 if (!res.has_value()) {
                     return 1;
-                }                
+                }
                 client_timeout = res.value();
                 has_timeout = true;
                 break;
@@ -61,7 +60,7 @@ int main(int argc, char *argv[]) {
                 std::cerr << USAGE_STR;
                 return 1;
             }
-        }          
+        }
     }
     if (!has_address || !has_port || !has_message || !has_timeout) {
         std::cerr << USAGE_STR;
@@ -73,18 +72,17 @@ int main(int argc, char *argv[]) {
     server_addr.sin_addr = address;
     server_addr.sin_port = htons(port);
 
-    int sock_fd = socket(AF_INET, SOCK_DGRAM, 0); 
+    int sock_fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock_fd < 0) {
         std::cerr << "Failed to create socket.\n";
         return 1;
     }
-    
+
     // Set receive timeout
     struct timeval timeout;
     timeout.tv_sec = client_timeout;
     timeout.tv_usec = 0;
-    if (setsockopt(sock_fd, SOL_SOCKET, SO_RCVTIMEO, &
-        timeout, sizeof(timeout)) < 0) {
+    if (setsockopt(sock_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
         std::cerr << "Failed to set socket timeout.\n";
         close(sock_fd);
         return 1;
@@ -105,8 +103,8 @@ int main(int argc, char *argv[]) {
     char buffer[1024];
     struct sockaddr_in from_addr;
     socklen_t from_len = sizeof(from_addr);
-    ssize_t recv_bytes = recvfrom(sock_fd, buffer, sizeof(buffer), 0,
-                                  (struct sockaddr *)&from_addr, &from_len);
+    ssize_t recv_bytes =
+        recvfrom(sock_fd, buffer, sizeof(buffer), 0, (struct sockaddr *)&from_addr, &from_len);
     if (recv_bytes < 0) {
         if (errno == EWOULDBLOCK || errno == EAGAIN) {
             std::cout << "No response from server (timeout).\n";

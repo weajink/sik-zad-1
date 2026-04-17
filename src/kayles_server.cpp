@@ -1,4 +1,5 @@
 #include <arpa/inet.h>
+#include <getopt.h>
 #include <kayles_common.h>
 #include <kayles_server.h>
 
@@ -6,7 +7,6 @@
 #include <iostream>
 #include <optional>
 #include <string>
-#include <getopt.h>
 
 using namespace kayles_common;
 using namespace kayles_server;
@@ -86,7 +86,7 @@ int main(int argc, char *argv[]) {
                 auto res = parse_timeout(optarg);
                 if (!res.has_value()) {
                     return 1;
-                }                
+                }
                 server_timeout = res.value();
                 has_timeout = true;
                 break;

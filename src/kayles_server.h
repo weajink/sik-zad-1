@@ -147,9 +147,10 @@ namespace kayles_server {
             WrongMessage wrong{};
             std::memcpy(wrong.client_bytes, buffer, sizeof(wrong.client_bytes));
             wrong.error_index = error_index;
-            sendto(socket_fd, &wrong, sizeof(wrong), 0, (struct sockaddr *)&client_address,
-                   sizeof(client_address));
-            // TODO: Validate sendto result (NOT ONLY HERE)
+            if (sendto(socket_fd, &wrong, sizeof(wrong), 0, (struct sockaddr *)&client_address,
+                       sizeof(client_address)) < 0) {
+                std::cerr << "Failed to send wrong message response: " << strerror(errno) << "\n";
+            }
         }
 
         void run_server_loop() {
@@ -173,8 +174,11 @@ namespace kayles_server {
                     auto &state = result.value();
                     size_t state_size =
                         sizeof(game_state_t) - MAX_BITMAP_SIZE + (state.max_pawn / 8 + 1);
-                    sendto(socket_fd, &state, state_size, 0, (struct sockaddr *)&client_address,
-                           sizeof(client_address));
+                    if (sendto(socket_fd, &state, state_size, 0, (struct sockaddr *)&client_address,
+                               sizeof(client_address)) < 0) {
+                        std::cerr << "Failed to send game state response: " << strerror(errno)
+                                  << "\n";
+                    }
                 } else {
                     switch (result.error()) {
                         case KaylesGameError::INVALID_PLAYER_ID:

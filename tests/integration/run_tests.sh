@@ -3,8 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-SERVER_BIN="$REPO_ROOT/build/kayles_server"
-CLIENT_BIN="$REPO_ROOT/build/kayles_client"
+SERVER_BIN="$REPO_ROOT/src/kayles_server"
+CLIENT_BIN="$REPO_ROOT/src/kayles_client"
 
 # Verify binaries exist
 if [[ ! -x "$SERVER_BIN" ]]; then

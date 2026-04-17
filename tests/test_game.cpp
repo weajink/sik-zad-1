@@ -484,17 +484,17 @@ TEST(GameTurnOrder, FullGameAlternatingMoves6Pawns) {
     g.join_player_b(2);
 
     EXPECT_EQ(get_status(g), 2);  // TURN_B
-    g.move(2, 0, 1);  // B takes pawn 0
+    g.move(2, 0, 1);              // B takes pawn 0
     EXPECT_EQ(get_status(g), 1);  // TURN_A
-    g.move(1, 1, 1);  // A takes pawn 1
+    g.move(1, 1, 1);              // A takes pawn 1
     EXPECT_EQ(get_status(g), 2);  // TURN_B
-    g.move(2, 2, 1);  // B takes pawn 2
+    g.move(2, 2, 1);              // B takes pawn 2
     EXPECT_EQ(get_status(g), 1);  // TURN_A
-    g.move(1, 3, 1);  // A takes pawn 3
+    g.move(1, 3, 1);              // A takes pawn 3
     EXPECT_EQ(get_status(g), 2);  // TURN_B
-    g.move(2, 4, 1);  // B takes pawn 4
+    g.move(2, 4, 1);              // B takes pawn 4
     EXPECT_EQ(get_status(g), 1);  // TURN_A
-    g.move(1, 5, 1);  // A takes last pawn -> WIN_A
+    g.move(1, 5, 1);              // A takes last pawn -> WIN_A
     EXPECT_EQ(get_status(g), 3);  // WIN_A
 }
 
@@ -505,9 +505,9 @@ TEST(GameTurnOrder, FullGameWithTwoPawnMoves) {
     g.join_player_b(2);
 
     EXPECT_EQ(get_status(g), 2);  // TURN_B
-    g.move(2, 0, 2);  // B takes pawns 0 and 1
+    g.move(2, 0, 2);              // B takes pawns 0 and 1
     EXPECT_EQ(get_status(g), 1);  // TURN_A
-    g.move(1, 2, 2);  // A takes pawns 2 and 3 -> WIN_A
+    g.move(1, 2, 2);              // A takes pawns 2 and 3 -> WIN_A
     EXPECT_EQ(get_status(g), 3);  // WIN_A
 }
 
@@ -552,7 +552,7 @@ TEST(GameGiveUp, GiveUpNotYourTurnPlayerADuringTurnB) {
     KaylesGame g(0, 1, 2, row);
     g.join_player_b(2);
     EXPECT_EQ(get_status(g), 2);  // TURN_B
-    g.give_up(1);  // A tries to give up during B's turn -> no-op
+    g.give_up(1);                 // A tries to give up during B's turn -> no-op
     EXPECT_EQ(get_status(g), 2);  // still TURN_B
 }
 
@@ -560,9 +560,9 @@ TEST(GameGiveUp, GiveUpNotYourTurnPlayerBDuringTurnA) {
     pawn_row_t row = {1, 1, 1};
     KaylesGame g(0, 1, 2, row);
     g.join_player_b(2);
-    g.move(2, 0, 1);  // TURN_A
+    g.move(2, 0, 1);              // TURN_A
     EXPECT_EQ(get_status(g), 1);  // TURN_A
-    g.give_up(2);  // B tries to give up during A's turn -> no-op
+    g.give_up(2);                 // B tries to give up during A's turn -> no-op
     EXPECT_EQ(get_status(g), 1);  // still TURN_A
 }
 
@@ -631,10 +631,10 @@ TEST(GameEdge, MaxPawn255TakeTwoAtBoundary) {
     pawn_row_t row(256, true);
     KaylesGame g(0, 1, 255, row);
     g.join_player_b(2);
-    g.move(2, 254, 2);  // Should succeed: takes pawns 254 and 255
+    g.move(2, 254, 2);            // Should succeed: takes pawns 254 and 255
     EXPECT_EQ(get_status(g), 1);  // TURN_A
 
     // Trying to take two at position 255 should fail (255+1=256 > max_pawn=255)
-    g.move(1, 255, 2);  // Illegal
+    g.move(1, 255, 2);            // Illegal
     EXPECT_EQ(get_status(g), 1);  // still TURN_A (pawn 255 is already down anyway)
 }

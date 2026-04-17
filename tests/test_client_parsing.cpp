@@ -2,8 +2,8 @@
 #include <gtest/gtest.h>
 #include <kayles_client.h>
 
-#include <cstring>
 #include <cstdint>
+#include <cstring>
 
 // ---------------------------------------------------------------------------
 // Helper: extract a big-endian uint32_t from a byte buffer at the given offset.

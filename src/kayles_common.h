@@ -3,14 +3,15 @@
 
 #include <arpa/inet.h>
 #include <netdb.h>
+
 #include <charconv>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <vector>
+#include <iostream>
 #include <optional>
 #include <string_view>
-#include <iostream>
+#include <vector>
 
 namespace kayles_common {
     using address_t = in_addr;
@@ -75,7 +76,7 @@ namespace kayles_common {
         error_index_t error_index;
     };
 
-    std::ostream &operator<<(std::ostream &os, const game_state_t &state) {
+    inline std::ostream &operator<<(std::ostream &os, const game_state_t &state) {
         os << "Game ID: " << ntohl(state.game_id) << "\n";
         os << "Player A ID: " << ntohl(state.player_a_id) << "\n";
         os << "Player B ID: " << ntohl(state.player_b_id) << "\n";
@@ -88,12 +89,13 @@ namespace kayles_common {
         return os;
     }
 
-    std::ostream &operator<<(std::ostream &os, const WrongMessage &msg) {
+    inline std::ostream &operator<<(std::ostream &os, const WrongMessage &msg) {
         os << "Wrong Message:\n";
         os << "Client Bytes: ";
         for (size_t i = 0; i < CLIENT_MESSAGE_SIZE; ++i) {
             os << std::hex << static_cast<int>(msg.client_bytes[i]) << " ";
         }
+        os << std::dec << "\n";
         os << "\nStatus: " << static_cast<int>(msg.status) << "\n";
         os << "Error Index: " << static_cast<int>(msg.error_index) << std::dec;
         return os;
@@ -102,7 +104,7 @@ namespace kayles_common {
     inline bool parse_address(address_t &address, std::string_view address_str) {
         struct addrinfo hints;
         memset(&hints, 0, sizeof(hints));
-        hints.ai_family = AF_INET;  // IPv4
+        hints.ai_family = AF_INET;       // IPv4
         hints.ai_socktype = SOCK_DGRAM;  // UDP
         hints.ai_protocol = IPPROTO_UDP;
 
@@ -112,7 +114,7 @@ namespace kayles_common {
             std::cerr << "getaddrinfo failed: " << gai_strerror(errcode) << "\n";
             return false;
         }
-        
+
         address.s_addr = ((struct sockaddr_in *)(addres_result->ai_addr))->sin_addr.s_addr;
         freeaddrinfo(addres_result);
         return true;
@@ -130,8 +132,7 @@ namespace kayles_common {
     inline std::optional<timeout_t> parse_timeout(std::string_view timeout_str) {
         timeout_t timeout;
         if (!from_chars(timeout_str.data(), timeout_str.data() + timeout_str.size(), timeout) ||
-            !(timeout >= MIN_TIMEOUT &&
-                timeout <= MAX_TIMEOUT)) {
+            !(timeout >= MIN_TIMEOUT && timeout <= MAX_TIMEOUT)) {
             std::cerr << "Invalid timeout.\n";
             return std::nullopt;
         }

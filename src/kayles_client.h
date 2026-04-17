@@ -1,9 +1,9 @@
 #ifndef KAYLES_CLIENT_H
 #define KAYLES_CLIENT_H
 
-#include <kayles_common.h>
-
 #include <arpa/inet.h>
+#include <errno.h>
+#include <kayles_common.h>
 
 #include <cstring>
 #include <iostream>
@@ -51,10 +51,19 @@ inline std::optional<WireMessage> parse_client_message(std::string_view message_
     // Validate field count
     size_t expected;
     switch (msg_type) {
-        case 0: expected = 2; break;
-        case 1: case 2: expected = 4; break;
-        case 3: case 4: expected = 3; break;
-        default: return std::nullopt;
+        case 0:
+            expected = 2;
+            break;
+        case 1:
+        case 2:
+            expected = 4;
+            break;
+        case 3:
+        case 4:
+            expected = 3;
+            break;
+        default:
+            return std::nullopt;
     }
     if (tokens.size() != expected) {
         std::cerr << "Wrong number of fields for message type " << static_cast<int>(msg_type)

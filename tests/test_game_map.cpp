@@ -296,9 +296,12 @@ TEST(KaylesGameMap, InterleavedMovesAcrossGames) {
     KaylesGameMap gm(60, 2, make_row_3());
 
     // Create 3 games
-    gm.join(1); gm.join(2);   // game 0: players 1,2
-    gm.join(3); gm.join(4);   // game 1: players 3,4
-    gm.join(5); gm.join(6);   // game 2: players 5,6
+    gm.join(1);
+    gm.join(2);  // game 0: players 1,2
+    gm.join(3);
+    gm.join(4);  // game 1: players 3,4
+    gm.join(5);
+    gm.join(6);  // game 2: players 5,6
 
     // Interleaved moves
     auto r0 = gm.move(2, 0, 0, 1);  // game 0: B moves
@@ -391,8 +394,10 @@ TEST(KaylesGameMap, FreshGameNotDeletedByTimeout) {
 TEST(KaylesGameMap, MultipleGamesIndependentPlayerValidation) {
     // Players from game 0 cannot operate on game 1
     KaylesGameMap gm(60, 2, make_row_3());
-    gm.join(1); gm.join(2);   // game 0
-    gm.join(3); gm.join(4);   // game 1
+    gm.join(1);
+    gm.join(2);  // game 0
+    gm.join(3);
+    gm.join(4);  // game 1
 
     // Player 1 (game 0) tries to move in game 1
     auto r1 = gm.move(1, 1, 0, 1);

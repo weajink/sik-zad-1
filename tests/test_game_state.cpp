@@ -306,7 +306,8 @@ TEST(GameState, BitmapAlternatingInverse8Pawns) {
 TEST(GameState, BitmapAlternating16Pawns) {
     // max_pawn=15, alternating 1010... -> both bytes 0xAA
     pawn_row_t row(16, false);
-    for (int i = 0; i < 16; i += 2) row[i] = true;
+    for (int i = 0; i < 16; i += 2)
+        row[i] = true;
     KaylesGame g(0, 1, 15, row);
     auto buf = g.get_game_state();
     EXPECT_EQ(buf.pawn_row_bitmap[0], 0xAA);
@@ -316,7 +317,8 @@ TEST(GameState, BitmapAlternating16Pawns) {
 TEST(GameState, BitmapAlternating256Pawns) {
     // max_pawn=255, alternating 1010... -> all 32 bytes should be 0xAA
     pawn_row_t row(256, false);
-    for (int i = 0; i < 256; i += 2) row[i] = true;
+    for (int i = 0; i < 256; i += 2)
+        row[i] = true;
     KaylesGame g(0, 1, 255, row);
     auto buf = g.get_game_state();
     for (int i = 0; i < 32; i++) {
