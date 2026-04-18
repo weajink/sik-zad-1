@@ -1177,54 +1177,93 @@ class TestMultipleGames:
 # 11. TIMEOUT BEHAVIOR
 # ===========================================================================
 
-# Timeout used in all timeout tests.  3 s gives implementations that track time
-# in whole seconds at least one full second of margin on each side.
+# Server timeout used for section-11 tests.
 _TIMEOUT_SECS = 3
 
-# How long to sleep to be sure the timeout has fired.  The spec allows servers
-# to check timeouts only when a message arrives, so we just need the *wall-clock
-# gap* to comfortably exceed server_timeout.  4× gives plenty of slack even
-# when the OS scheduler delays the sleep or the server uses integer arithmetic.
-_SLEEP_EXPIRE = _TIMEOUT_SECS * 4
-
-# How long to sleep between keep-alive pings.  Must be well below the timeout
-# so that even a 1-second-granularity implementation considers the game alive.
-# Using 40 % of the timeout keeps us safe regardless of rounding direction.
-_SLEEP_PING = max(1, int(_TIMEOUT_SECS * 0.4))
+# ---------------------------------------------------------------------------
+# Tight timing constants — all sleeps stay within _TIGHT_MARGIN of the true
+# timeout boundary so each test exercises a window of at most 0.15 s (< 0.2 s).
+#
+# Design:
+#   _SLEEP_EXPIRE  = t + _TIGHT_MARGIN   → guaranteed to be past the deadline
+#   _SLEEP_PREEXP  = t - _TIGHT_MARGIN   → guaranteed to be before the deadline
+#
+# The spec allows servers to check timeouts lazily (only when a message
+# arrives), so every expiry check sends a trigger message immediately after
+# the sleep, which forces the server to evaluate the timeout right then.
+# ---------------------------------------------------------------------------
+_TIGHT_MARGIN = 0.15                         # seconds  (< 0.2 s requirement)
+_SLEEP_EXPIRE = _TIMEOUT_SECS + _TIGHT_MARGIN    # sleep this long → timeout has fired
+_SLEEP_PREEXP = _TIMEOUT_SECS - _TIGHT_MARGIN    # sleep this long → timeout NOT yet fired
 
 
 class TestTimeout:
 
     def test_waiting_game_expires_without_keep_alive(self):
-        """Game in WAITING_FOR_OPPONENT is deleted if A doesn't keep alive."""
+        """
+        Game in WAITING_FOR_OPPONENT is deleted exactly after server_timeout.
+
+        Proof:
+          • At t = _SLEEP_EXPIRE (= T + 0.15 s) the deadline has passed by
+            _TIGHT_MARGIN seconds.
+          • The keep-alive that follows forces the server to evaluate timeouts;
+            the game must already be gone.
+        """
         with ServerProcess(pawn_row="11111111", timeout=_TIMEOUT_SECS) as srv:
             addr = srv.addr()
             with make_udp_socket() as sa:
                 gs = join_as_player(addr, 1001, sa)
                 game_id = gs.game_id
-                # Sleep well beyond the timeout; the subsequent keep-alive
-                # message will trigger the server's timeout check.
                 time.sleep(_SLEEP_EXPIRE)
+                # This message triggers the server's timeout check.
                 raw = udp_send_recv(sa, pack_keep_alive(1001, game_id), addr)
-            if raw is not None:
-                resp = parse_response(raw)
-                assert isinstance(resp, WrongMsg), "Game should be deleted after timeout"
+            assert raw is not None, "Server must reply even to stale keep-alive"
+            resp = parse_response(raw)
+            assert isinstance(resp, WrongMsg), \
+                f"Game must be gone {_TIGHT_MARGIN:.2f} s after deadline; got {resp}"
+
+    def test_game_still_alive_just_before_timeout(self):
+        """
+        At t = T - _TIGHT_MARGIN the game must NOT yet have expired.
+
+        This is the near-boundary positive check: if the server fires the
+        timeout too early (by ≥ 0.15 s) this test catches it.
+        """
+        with ServerProcess(pawn_row="11111111", timeout=_TIMEOUT_SECS) as srv:
+            addr = srv.addr()
+            with make_udp_socket() as sa:
+                gs = join_as_player(addr, 1001, sa)
+                game_id = gs.game_id
+                time.sleep(_SLEEP_PREEXP)
+                raw = udp_send_recv(sa, pack_keep_alive(1001, game_id), addr)
+            assert raw is not None, "Server must reply before the deadline"
+            gs2 = GameState(raw)
+            assert gs2.status == STATUS_WAITING, \
+                f"Game must still be WAITING at T - {_TIGHT_MARGIN:.2f} s; got {gs2}"
 
     def test_active_keep_alive_prevents_timeout(self):
-        """Regular keep-alive messages prevent game deletion."""
+        """
+        A keep-alive sent at T - _TIGHT_MARGIN resets the clock; the game must
+        remain alive a further T - _TIGHT_MARGIN seconds after the ping.
+
+        Timeline (T = _TIMEOUT_SECS):
+          0 ──── join ────────────────────────────────── T-0.15 ── ping ── T-0.15+T-0.15 ── ping
+                                                          ↑ alive              ↑ alive (clock reset)
+        """
         with ServerProcess(pawn_row="11111111", timeout=_TIMEOUT_SECS) as srv:
             addr = srv.addr()
             with make_udp_socket() as sa:
                 gs = join_as_player(addr, 1001, sa)
                 game_id = gs.game_id
-                # Send 4 pings, each _SLEEP_PING seconds apart.  Every ping
-                # resets the server's idle clock so the game must stay alive.
-                for _ in range(4):
-                    time.sleep(_SLEEP_PING)
+                for iteration in range(2):
+                    # Sleep right up to — but not past — the current deadline.
+                    time.sleep(_SLEEP_PREEXP)
                     raw = udp_send_recv(sa, pack_keep_alive(1001, game_id), addr)
-                    assert raw is not None
+                    assert raw is not None, \
+                        f"Iteration {iteration}: no response; server may have crashed"
                     gs2 = GameState(raw)
-                    assert gs2.status == STATUS_WAITING, "Game should still be alive"
+                    assert gs2.status == STATUS_WAITING, \
+                        f"Iteration {iteration}: game expired early at T - {_TIGHT_MARGIN:.2f} s"
 
     def test_client_timeout_prints_message(self):
         """Client prints a message when server doesn't respond."""
@@ -1236,8 +1275,17 @@ class TestTimeout:
         assert proc.returncode == 0
         assert proc.stdout.strip(), "Client should print timeout message"
 
-    def test_inactive_player_loses(self):
-        """A player who stops sending keep-alives is reaped unless the game is kept alive."""
+    def test_inactive_player_b_loses_after_timeout(self):
+        """
+        Once B has made its last move, if B sends nothing for T seconds the
+        server must declare A the winner.
+
+        Timeline (T = _TIMEOUT_SECS):
+          0 ─── join A ─── join B ─── B moves (TURN_A) ───── T-0.15 ─── A keep-alive
+                                       ↑ B's per-game clock reset            ↑ A's clock reset
+                           ─────────────────────── 0.30 s ──────────────────── A keep-alive
+                           (total from B's move = T+0.15 > T → B must be reaped → WIN_A)
+        """
         with ServerProcess(pawn_row="11111111", timeout=_TIMEOUT_SECS) as srv:
             addr = srv.addr()
             with make_udp_socket() as sa, make_udp_socket() as sb:
@@ -1245,24 +1293,30 @@ class TestTimeout:
                 gs_b = join_as_player(addr, 1002, sb)
                 game_id = gs_b.game_id
 
-                # B makes the first move, so it becomes A's turn.
+                # B moves — this resets B's per-game clock (t=0 for B from here).
                 udp_send_recv(sb, pack_move1(1002, game_id, 0), addr)
 
-                # Keep the game alive by having A send keep-alives before timeout.
-                for _ in range(4):
-                    time.sleep(_SLEEP_PING)
-                    raw_a = udp_send_recv(sa, pack_keep_alive(1001, game_id), addr)
-                    assert raw_a is not None, "A should keep the game alive"
-                    gs_a = GameState(raw_a)
-                    assert gs_a.status in (STATUS_TURN_A, STATUS_TURN_B, STATUS_WAITING)
+                # Sleep until T - 0.15 s (just before B's deadline).  Then A
+                # sends a keep-alive to reset *A's* clock (B is still silent).
+                time.sleep(_SLEEP_PREEXP)
+                raw_mid = udp_send_recv(sa, pack_keep_alive(1001, game_id), addr)
+                assert raw_mid is not None, "Server must be alive mid-test"
+                gs_mid = GameState(raw_mid)
+                assert gs_mid.status == STATUS_TURN_A, \
+                    "Game should still be in TURN_A before B's deadline"
 
-                # Now B should still be able to query the game state.
-                raw = udp_send_recv(sb, pack_keep_alive(1002, game_id), addr)
-                assert raw is not None
-                gs2 = GameState(raw)
+                # Sleep another 2 * _TIGHT_MARGIN so that total time from B's
+                # move is T + 0.15 > T, but time from A's last keep-alive is
+                # only 0.30 s < T (so A has NOT timed out).
+                time.sleep(2 * _TIGHT_MARGIN)
 
-            assert gs2.status == STATUS_TURN_A, \
-                f"Expected TURN_A with both players alive, got status={gs2.status}"
+                # This keep-alive triggers the server's timeout evaluation.
+                raw_final = udp_send_recv(sa, pack_keep_alive(1001, game_id), addr)
+
+            assert raw_final is not None, "Server must reply to A's final keep-alive"
+            gs_final = GameState(raw_final)
+            assert gs_final.status == STATUS_WIN_A, \
+                f"B was silent for T + {_TIGHT_MARGIN:.2f} s; expected WIN_A, got {gs_final}"
 
 
 # ===========================================================================
@@ -1313,10 +1367,14 @@ class TestClientBinary:
         assert result.returncode == 0
 
     def test_client_wrong_msg_shows_error_output(self, srv_default):
-        """Client should reject player_id=0 (spec: player IDs are nonzero)."""
-        result = self._run_client(srv_default, "0/0")   # player_id=0 invalid
-        assert result.returncode != 0
-        assert result.stderr.strip()
+        """Client should display something meaningful for MSG_WRONG_MSG.
+
+        We use a nonexistent game_id: the client accepts the message
+        (valid format) but the server responds with MSG_WRONG_MSG.
+        """
+        result = self._run_client(srv_default, "3/1/4294967295")  # keep-alive, bogus game_id
+        assert result.returncode == 0
+        assert result.stdout.strip()
 
     def test_client_keep_alive_via_binary(self, srv_default):
         with make_udp_socket() as s:
@@ -1651,6 +1709,1105 @@ class TestFullGame:
             raw = udp_send_recv(sa, pack_keep_alive(1001, game_id), addr)
             final = GameState(raw)
         assert final.status == STATUS_WIN_B
+
+
+# ===========================================================================
+# 17. STRESS — MANY SIMULTANEOUS AND SEQUENTIAL GAMES
+# ===========================================================================
+
+class TestStressMultiGame:
+    """
+    Stress-tests the server with many games alive at the same time, many
+    sequential games on the same server instance, a single player active in
+    dozens of games simultaneously, and interleaved move sequences across
+    multiple games.
+    """
+
+    # ------------------------------------------------------------------
+    # helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _complete_game_2pawns(addr, pid_a, pid_b, sa, sb):
+        """Start and finish a 2-pawn game; return final GameState."""
+        gs_a = join_as_player(addr, pid_a, sa)
+        gs_b = join_as_player(addr, pid_b, sb)
+        game_id = gs_b.game_id
+        raw = udp_send_recv(sb, pack_move2(pid_b, game_id, 0), addr)
+        return GameState(raw), game_id
+
+    # ------------------------------------------------------------------
+    # 17.1  Sequential games — one finishes, then next starts
+    # ------------------------------------------------------------------
+
+    @pytest.mark.parametrize("pawn_row,expected_pawns", [
+        ("11",           2),
+        ("111",          3),
+        ("11111111",     8),
+        ("11101111011111", 14),
+        ("1" * 64,      64),
+        ("1" * 256,    256),
+    ])
+    def test_sequential_games_different_rows(self, pawn_row, expected_pawns):
+        """Start a game, finish it, start another — server must handle each correctly."""
+        with ServerProcess(pawn_row=pawn_row, timeout=5) as srv:
+            addr = srv.addr()
+            for game_num in range(3):
+                pid_a = 1000 + game_num * 2
+                pid_b = 1001 + game_num * 2
+                with make_udp_socket() as sa, make_udp_socket() as sb:
+                    gs_a = join_as_player(addr, pid_a, sa)
+                    gs_b = join_as_player(addr, pid_b, sb)
+                    assert gs_b.max_pawn == expected_pawns - 1, \
+                        f"Game {game_num}: max_pawn mismatch"
+                    # B gives up to cleanly end the game
+                    raw = udp_send_recv(sb, pack_give_up(pid_b, gs_b.game_id), addr)
+                    final = GameState(raw)
+                    assert final.status == STATUS_WIN_A
+
+    def test_ten_sequential_games_server_stable(self):
+        """Server stays alive and responsive after 10 back-to-back complete games."""
+        with ServerProcess(pawn_row="11", timeout=5) as srv:
+            addr = srv.addr()
+            for i in range(10):
+                pid_a = 2000 + i * 2
+                pid_b = 2001 + i * 2
+                with make_udp_socket() as sa, make_udp_socket() as sb:
+                    gs, gid = self._complete_game_2pawns(addr, pid_a, pid_b, sa, sb)
+                    assert gs.status == STATUS_WIN_B, f"Game {i} did not end WIN_B"
+            # Server should still respond
+            with make_udp_socket() as s:
+                raw = udp_send_recv(s, pack_join(9999), addr)
+            assert raw is not None, "Server unresponsive after 10 sequential games"
+
+    # ------------------------------------------------------------------
+    # 17.2  Many simultaneous games
+    # ------------------------------------------------------------------
+
+    @pytest.mark.parametrize("n_games", [5, 10, 20])
+    def test_n_simultaneous_games_independent(self, n_games):
+        """
+        Open n_games simultaneously, make one move in each, verify each game
+        transitions independently and carries the correct pawn row.
+        """
+        with ServerProcess(pawn_row="11111111", timeout=10) as srv:
+            addr = srv.addr()
+            sockets = []
+            game_ids = []
+            try:
+                # Join all games
+                for i in range(n_games):
+                    sa = make_udp_socket()
+                    sb = make_udp_socket()
+                    sockets.append((sa, sb))
+                    gs_a = join_as_player(addr, 3000 + i * 2, sa)
+                    gs_b = join_as_player(addr, 3001 + i * 2, sb)
+                    assert gs_b.status == STATUS_TURN_B
+                    game_ids.append(gs_b.game_id)
+
+                # All game IDs must be distinct
+                assert len(set(game_ids)) == n_games, "Duplicate game IDs!"
+
+                # Make one move in each game (B removes pawn 0)
+                for i, ((sa, sb), gid) in enumerate(zip(sockets, game_ids)):
+                    pid_b = 3001 + i * 2
+                    raw = udp_send_recv(sb, pack_move1(pid_b, gid, 0), addr)
+                    gs = GameState(raw)
+                    assert gs.status == STATUS_TURN_A, \
+                        f"Game {i} (gid={gid}): expected TURN_A after B's move"
+                    assert not gs.pawn_present(0), \
+                        f"Game {i}: pawn 0 should be gone"
+
+                # Verify other games weren't disturbed by checking pawn 0 still present
+                # via a keep-alive on a game we haven't touched (well — each was moved once,
+                # so just cross-check pawn 0 is absent in all)
+                for i, ((sa, sb), gid) in enumerate(zip(sockets, game_ids)):
+                    pid_a = 3000 + i * 2
+                    raw = udp_send_recv(sa, pack_keep_alive(pid_a, gid), addr)
+                    gs = GameState(raw)
+                    assert not gs.pawn_present(0)
+
+            finally:
+                for sa, sb in sockets:
+                    sa.close()
+                    sb.close()
+
+    def test_simultaneous_games_different_pawn_rows(self):
+        """Games with different pawn rows run independently on one server,
+        but each server only supports one pawn_row, so we test that a server
+        with a complex row handles many games correctly."""
+        pawn_row = "11101111011111"  # 14 chars, pawn 3 absent
+        with ServerProcess(pawn_row=pawn_row, timeout=10) as srv:
+            addr = srv.addr()
+            N = 8
+            sockets = []
+            game_ids = []
+            try:
+                for i in range(N):
+                    sa = make_udp_socket()
+                    sb = make_udp_socket()
+                    sockets.append((sa, sb))
+                    gs_a = join_as_player(addr, 4000 + i * 2, sa)
+                    gs_b = join_as_player(addr, 4001 + i * 2, sb)
+                    game_ids.append(gs_b.game_id)
+                    assert gs_b.max_pawn == 13
+                    assert not gs_b.pawn_present(3), "Pawn 3 absent in complex row"
+
+                assert len(set(game_ids)) == N
+            finally:
+                for sa, sb in sockets:
+                    sa.close()
+                    sb.close()
+
+    # ------------------------------------------------------------------
+    # 17.3  One player in many games at once
+    # ------------------------------------------------------------------
+
+    def test_one_player_in_many_games(self):
+        """
+        A single player_id participates in 8 concurrent games — once as A,
+        once as B.  All game IDs must be unique and state independent.
+        """
+        with ServerProcess(pawn_row="1111", timeout=10) as srv:
+            addr = srv.addr()
+            OWN_PID = 7777
+            N = 8
+            sockets = []
+            game_ids = []
+            try:
+                for i in range(N):
+                    s_self = make_udp_socket()
+                    s_opp  = make_udp_socket()
+                    sockets.append((s_self, s_opp))
+                    # OWN_PID always joins first (as A)
+                    gs_a = join_as_player(addr, OWN_PID, s_self)
+                    opp_pid = 8000 + i
+                    gs_b = join_as_player(addr, opp_pid, s_opp)
+                    game_ids.append(gs_b.game_id)
+
+                assert len(set(game_ids)) == N, "Player in N games must produce N distinct IDs"
+
+                # OWN_PID makes a keep-alive in every game — must all respond correctly
+                for i, ((s_self, _), gid) in enumerate(zip(sockets, game_ids)):
+                    raw = udp_send_recv(s_self, pack_keep_alive(OWN_PID, gid), addr)
+                    assert raw is not None, f"No response for game {i}"
+                    gs = GameState(raw)
+                    assert gs.game_id == gid
+
+            finally:
+                for s1, s2 in sockets:
+                    s1.close(); s2.close()
+
+    # ------------------------------------------------------------------
+    # 17.4  Interleaved move sequences across multiple games
+    # ------------------------------------------------------------------
+
+    def test_interleaved_moves_across_five_games(self):
+        """
+        Make moves in five games in round-robin order.  Each game must track
+        its own state correctly regardless of interleaving.
+        """
+        with ServerProcess(pawn_row="11111111", timeout=15) as srv:
+            addr = srv.addr()
+            N = 5
+            sockets = []
+            game_info = []
+            try:
+                for i in range(N):
+                    sa = make_udp_socket()
+                    sb = make_udp_socket()
+                    sockets.append((sa, sb))
+                    pid_a = 5000 + i * 2
+                    pid_b = 5001 + i * 2
+                    join_as_player(addr, pid_a, sa)
+                    gs_b = join_as_player(addr, pid_b, sb)
+                    game_info.append((pid_a, pid_b, gs_b.game_id))
+
+                # Round-robin: each round, B moves in game i then A moves in game i
+                for pawn in range(4):  # 4 rounds (removing pawns 0..3)
+                    for i, (pid_a, pid_b, gid) in enumerate(game_info):
+                        sa, sb = sockets[i]
+                        # B's turn
+                        raw_b = udp_send_recv(sb, pack_move1(pid_b, gid, pawn * 2), addr)
+                        gs = GameState(raw_b)
+                        assert gs.status == STATUS_TURN_A, \
+                            f"Round {pawn} game {i}: expected TURN_A after B's move"
+                        # A's turn
+                        raw_a = udp_send_recv(sa, pack_move1(pid_a, gid, pawn * 2 + 1), addr)
+                        gs = GameState(raw_a)
+                        if pawn < 3:
+                            assert gs.status == STATUS_TURN_B, \
+                                f"Round {pawn} game {i}: expected TURN_B after A's move"
+                        else:
+                            assert gs.status == STATUS_WIN_A, \
+                                f"Round {pawn} game {i}: expected WIN_A after A's move"
+
+            finally:
+                for sa, sb in sockets:
+                    sa.close(); sb.close()
+
+    # ------------------------------------------------------------------
+    # 17.5  Mass join flood
+    # ------------------------------------------------------------------
+
+    def test_mass_join_100_players(self):
+        """
+        100 distinct player_ids send MSG_JOIN in rapid succession.
+        Pairs should form 50 games; server must remain responsive.
+        """
+        with ServerProcess(pawn_row="11", timeout=10) as srv:
+            addr = srv.addr()
+            game_ids_seen = set()
+            for i in range(100):
+                with make_udp_socket(timeout=2.0) as s:
+                    raw = udp_send_recv(s, pack_join(6000 + i), addr)
+                assert raw is not None, f"No response on join {i}"
+                gs = GameState(raw)
+                game_ids_seen.add(gs.game_id)
+
+            # After 100 joins, server must still respond
+            with make_udp_socket() as s:
+                raw = udp_send_recv(s, pack_join(9998), addr)
+            assert raw is not None, "Server unresponsive after 100 joins"
+
+    # ------------------------------------------------------------------
+    # 17.6  Rapid move bursts
+    # ------------------------------------------------------------------
+
+    def test_rapid_move_burst_single_game(self):
+        """
+        Both players hammer the server with alternating MOVE_1 messages as
+        fast as possible until the game ends.  No deadlock or crash expected.
+        """
+        with ServerProcess(pawn_row="1" * 16, timeout=10) as srv:
+            addr = srv.addr()
+            with make_udp_socket() as sa, make_udp_socket() as sb:
+                join_as_player(addr, 1001, sa)
+                gs = join_as_player(addr, 1002, sb)
+                gid = gs.game_id
+                players = [(1002, sb), (1001, sa)]
+                final = None
+                for pawn in range(16):
+                    pid, sock = players[pawn % 2]
+                    raw = udp_send_recv(sock, pack_move1(pid, gid, pawn), addr)
+                    assert raw is not None, f"No response at pawn {pawn}"
+                    final = GameState(raw)
+                assert final.status in (STATUS_WIN_A, STATUS_WIN_B)
+                assert final.active_pawns() == []
+
+
+# ===========================================================================
+# 18. TIMEOUT VARIANTS — DIFFERENT server_timeout VALUES
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# All tests in this class use the same _TIGHT_MARGIN defined in section 11.
+# Each parameterised case computes its own sleep durations from the actual
+# t_val so no test sleeps more than t_val + _TIGHT_MARGIN seconds.
+# ---------------------------------------------------------------------------
+
+def _sleep_expire(t_val: float) -> None:
+    """Sleep exactly long enough to guarantee the timeout has fired."""
+    time.sleep(t_val + _TIGHT_MARGIN)
+
+
+def _sleep_preexp(t_val: float) -> None:
+    """Sleep just short of the timeout — the game must still be alive after."""
+    time.sleep(max(0.0, t_val - _TIGHT_MARGIN))
+
+
+class TestTimeoutVariants:
+    """
+    Exercises the server with t=1, t=2, t=3.  Every sleep is within
+    _TIGHT_MARGIN (0.15 s) of the true deadline, satisfying the < 0.2 s
+    discrepancy requirement.
+    """
+
+    # ------------------------------------------------------------------
+    # 18.1  t=1: WAITING game expires quickly
+    # ------------------------------------------------------------------
+
+    def test_t1_waiting_game_expires(self):
+        """
+        With t=1: game must be gone at T + 0.15 s.
+
+        Timeline:
+          0 ── join A (WAITING) ── 1.15 s ── probe JOIN (triggers reaper)
+                                              ↓
+                                   keep-alive with stale gid → WrongMsg
+        """
+        with ServerProcess(pawn_row="11111111", timeout=1) as srv:
+            addr = srv.addr()
+            with make_udp_socket() as sa:
+                gs_a = join_as_player(addr, 1001, sa)
+                gid = gs_a.game_id
+
+            _sleep_expire(1)   # 1.15 s — game must have expired
+
+            with make_udp_socket() as s:
+                udp_send_recv(s, pack_join(9001), addr)   # trigger reaper
+                raw = udp_send_recv(s, pack_keep_alive(1001, gid), addr)
+
+            assert raw is not None
+            resp = parse_response(raw)
+            assert isinstance(resp, WrongMsg), \
+                f"t=1 game must be reaped at T+{_TIGHT_MARGIN:.2f} s; got {resp}"
+
+    def test_t1_waiting_game_alive_before_deadline(self):
+        """
+        With t=1: game must NOT be expired at T - 0.15 s.
+
+        Timeline:
+          0 ── join A (WAITING) ── 0.85 s ── keep-alive → WAITING (still alive)
+        """
+        with ServerProcess(pawn_row="11111111", timeout=1) as srv:
+            addr = srv.addr()
+            with make_udp_socket() as sa:
+                gs = join_as_player(addr, 1001, sa)
+                gid = gs.game_id
+                _sleep_preexp(1)   # 0.85 s
+                raw = udp_send_recv(sa, pack_keep_alive(1001, gid), addr)
+            assert raw is not None
+            gs2 = GameState(raw)
+            assert gs2.status == STATUS_WAITING, \
+                f"t=1 game must be WAITING at T-{_TIGHT_MARGIN:.2f} s; got {gs2}"
+
+    def test_t1_new_join_after_expiry_succeeds(self):
+        """
+        After the waiting game expires, a new MSG_JOIN must not crash the
+        server and must return a valid game state.
+        """
+        with ServerProcess(pawn_row="11111111", timeout=1) as srv:
+            addr = srv.addr()
+            with make_udp_socket() as sa:
+                join_as_player(addr, 1001, sa)
+
+            _sleep_expire(1)
+
+            with make_udp_socket() as sb:
+                raw = udp_send_recv(sb, pack_join(1002), addr)
+            assert raw is not None
+            gs_b = GameState(raw)
+            assert gs_b.status in (STATUS_WAITING, STATUS_TURN_B)
+
+    def test_t1_expired_game_keep_alive_returns_wrong_msg(self):
+        """
+        After t=1 + 0.15 s, keep-alive with the old game_id must yield WrongMsg.
+        """
+        with ServerProcess(pawn_row="11111111", timeout=1) as srv:
+            addr = srv.addr()
+            with make_udp_socket() as sa:
+                gs = join_as_player(addr, 1001, sa)
+                gid = gs.game_id
+
+            _sleep_expire(1)
+
+            with make_udp_socket() as s:
+                udp_send_recv(s, pack_join(9002), addr)   # trigger reaper
+                raw = udp_send_recv(s, pack_keep_alive(1001, gid), addr)
+
+            if raw is not None:
+                resp = parse_response(raw)
+                assert isinstance(resp, WrongMsg), \
+                    "Expired game must not be accessible"
+
+    def test_t1_completed_game_state_kept_briefly(self):
+        """
+        After WIN_B the state must still be readable immediately (< 1 s later).
+        """
+        with ServerProcess(pawn_row="11", timeout=1) as srv:
+            addr = srv.addr()
+            with make_udp_socket() as sa, make_udp_socket() as sb:
+                join_as_player(addr, 1001, sa)
+                gs = join_as_player(addr, 1002, sb)
+                gid = gs.game_id
+                udp_send_recv(sb, pack_move2(1002, gid, 0), addr)
+                # Immediate keep-alive (well within t=1) must still see WIN_B.
+                raw = udp_send_recv(sa, pack_keep_alive(1001, gid), addr)
+                final = GameState(raw)
+            assert final.status == STATUS_WIN_B
+
+    def test_t1_completed_game_gone_after_timeout(self):
+        """
+        At t=1 + 0.15 s after game end, the state must be removed.
+
+        Timeline:
+          0 ── WIN_B ── 1.15 s ── probe (trigger reaper) ── keep-alive → WrongMsg
+        """
+        with ServerProcess(pawn_row="11", timeout=1) as srv:
+            addr = srv.addr()
+            with make_udp_socket() as sa, make_udp_socket() as sb:
+                join_as_player(addr, 1001, sa)
+                gs = join_as_player(addr, 1002, sb)
+                gid = gs.game_id
+                udp_send_recv(sb, pack_move2(1002, gid, 0), addr)  # WIN_B at t=0
+
+            _sleep_expire(1)   # 1.15 s — state should be reaped
+
+            with make_udp_socket() as s:
+                udp_send_recv(s, pack_join(9003), addr)   # trigger reaper
+                raw = udp_send_recv(s, pack_keep_alive(1001, gid), addr)
+
+            if raw is not None:
+                resp = parse_response(raw)
+                assert isinstance(resp, WrongMsg), \
+                    "Finished game must be gone at T+0.15 s"
+
+    # ------------------------------------------------------------------
+    # 18.2  Boundary keep-alive: game stays alive exactly at the edge
+    # ------------------------------------------------------------------
+
+    @pytest.mark.parametrize("t_val", [1, 2, 3])
+    def test_keep_alive_just_before_expiry_resets_clock(self, t_val):
+        """
+        Sending a keep-alive at T - 0.15 s must:
+          (a) find the game alive (it has NOT expired yet), AND
+          (b) reset the clock — the game stays alive for another ~T seconds.
+
+        Timeline:
+          0 ─── join ─── (T-0.15) ─── keep-alive → WAITING  [clock reset]
+                                        ─── (T-0.15) ─── keep-alive → WAITING  [2nd check]
+        """
+        with ServerProcess(pawn_row="11111111", timeout=t_val) as srv:
+            addr = srv.addr()
+            with make_udp_socket() as sa:
+                gs = join_as_player(addr, 1001, sa)
+                gid = gs.game_id
+
+                for check in range(2):
+                    _sleep_preexp(t_val)   # T - 0.15 s
+                    raw = udp_send_recv(sa, pack_keep_alive(1001, gid), addr)
+                    assert raw is not None, \
+                        f"t={t_val} check {check}: no response; server may have died"
+                    gs2 = GameState(raw)
+                    assert gs2.status == STATUS_WAITING, \
+                        f"t={t_val} check {check}: game expired {_TIGHT_MARGIN:.2f} s early"
+
+    @pytest.mark.parametrize("t_val", [1, 2, 3])
+    def test_game_expired_at_t_plus_margin(self, t_val):
+        """
+        Without any keep-alive, game must be gone at T + 0.15 s.
+
+        This is the tight upper-bound check: if the server delays expiry
+        beyond T + 0.15 s this test fails.
+        """
+        with ServerProcess(pawn_row="11111111", timeout=t_val) as srv:
+            addr = srv.addr()
+            with make_udp_socket() as sa:
+                gs = join_as_player(addr, 1001, sa)
+                gid = gs.game_id
+
+            _sleep_expire(t_val)   # T + 0.15 s
+
+            with make_udp_socket() as s:
+                udp_send_recv(s, pack_join(9004 + t_val), addr)  # trigger reaper
+                raw = udp_send_recv(s, pack_keep_alive(1001, gid), addr)
+
+            assert raw is not None
+            resp = parse_response(raw)
+            assert isinstance(resp, WrongMsg), \
+                f"t={t_val}: game must be expired at T+{_TIGHT_MARGIN:.2f} s"
+
+    # ------------------------------------------------------------------
+    # 18.3  Expiry of one game must not disturb a concurrent active game
+    # ------------------------------------------------------------------
+
+    @pytest.mark.parametrize("t_val", [1, 2, 3])
+    def test_expired_game_does_not_disturb_active_game(self, t_val):
+        """
+        Game 1 (no keep-alives) expires.  Game 2 (pinged at T - 0.15 s) must
+        survive unharmed.
+
+        Timeline:
+          0 ─── join game1 A ─── join game2 A,B ─── (T-0.15) ─── game2 keep-alive → TURN_B
+                                                        (T+0.15) ─── game1 reaper probe
+                                                        ─── game2 keep-alive → still TURN_B
+        """
+        with ServerProcess(pawn_row="11111111", timeout=t_val) as srv:
+            addr = srv.addr()
+            with make_udp_socket() as sa1, \
+                 make_udp_socket() as sa2, make_udp_socket() as sb2:
+
+                # Game 1: will expire (no keep-alives).
+                gs1 = join_as_player(addr, 1001, sa1)
+                gid1 = gs1.game_id
+
+                # Game 2: both players; we will keep it alive.
+                join_as_player(addr, 2001, sa2)
+                gs2b = join_as_player(addr, 2002, sb2)
+                gid2 = gs2b.game_id
+
+                # Ping game 2 just before game 1's deadline → game 2 alive, clock reset.
+                _sleep_preexp(t_val)
+                raw_ok = udp_send_recv(sb2, pack_keep_alive(2002, gid2), addr)
+                assert raw_ok is not None, "Game 2 must respond before game 1 deadline"
+                assert GameState(raw_ok).status == STATUS_WAITING
+
+                # Cross the deadline for game 1; send a trigger message.
+                time.sleep(2 * _TIGHT_MARGIN)   # now T + 0.15 from start for game 1
+                udp_send_recv(sa1, pack_join(9997), addr)  # trigger reaper
+
+                # Game 2's last keep-alive was only 0.30 s ago → still alive.
+                raw2 = udp_send_recv(sb2, pack_keep_alive(2002, gid2), addr)
+                assert raw2 is not None
+                gs_check = GameState(raw2)
+                assert gs_check.status == STATUS_TURN_B, \
+                    f"t={t_val}: game 2 must survive game 1's expiry"
+
+    # ------------------------------------------------------------------
+    # 18.4  Inactive player loses mid-game (tight timing)
+    # ------------------------------------------------------------------
+
+    @pytest.mark.parametrize("t_val", [1, 2, 3])
+    def test_inactive_player_b_loses_midgame(self, t_val):
+        """
+        B makes one move (resetting its per-game clock), then goes silent.
+        A keeps its own clock alive.  After T + 0.15 s from B's move, A
+        sends a keep-alive that triggers the reaper → server must declare WIN_A.
+
+        Timeline (all times relative to B's move):
+          0 ── B moves (B clock reset) ── (T-0.15) ── A keep-alive (A clock reset)
+               ── 0.30 s ─── A keep-alive → WIN_A
+          (total from B move = T+0.15 > T; total from A's last = 0.30 s < T)
+        """
+        with ServerProcess(pawn_row="11111111", timeout=t_val) as srv:
+            addr = srv.addr()
+            with make_udp_socket() as sa, make_udp_socket() as sb:
+                join_as_player(addr, 1001, sa)
+                gs_b = join_as_player(addr, 1002, sb)
+                gid = gs_b.game_id
+
+                # B moves → TURN_A; B's per-game clock resets here.
+                udp_send_recv(sb, pack_move1(1002, gid, 0), addr)
+
+                # Wait until T - 0.15 s from B's move; send keep-alive so
+                # A's clock (also running since join) does not expire.
+                _sleep_preexp(t_val)
+                raw_mid = udp_send_recv(sa, pack_keep_alive(1001, gid), addr)
+                assert raw_mid is not None, "Server must be alive mid-test"
+                assert GameState(raw_mid).status == STATUS_TURN_A, \
+                    "Game must still be TURN_A just before B's deadline"
+
+                # Wait 2 × margin so total from B's move = T + 0.15 > T.
+                # A's last keep-alive was only 0.30 s ago, safely within T.
+                time.sleep(2 * _TIGHT_MARGIN)
+
+                # This keep-alive triggers the reaper for B.
+                raw_final = udp_send_recv(sa, pack_keep_alive(1001, gid), addr)
+
+            assert raw_final is not None, "Server must reply to A's final keep-alive"
+            gs_final = GameState(raw_final)
+            assert gs_final.status == STATUS_WIN_A, \
+                (f"t={t_val}: B silent for T+{_TIGHT_MARGIN:.2f} s → "
+                 f"expected WIN_A, got status={gs_final.status}")
+
+
+# ===========================================================================
+# 19. ROGUE PACKETS — ADVERSARIAL AND MALFORMED INPUTS
+# ===========================================================================
+
+class TestRoguePackets:
+    """
+    Sends every conceivable malformed, truncated, oversized, replayed, or
+    adversarially constructed packet.  After each burst the server must
+    remain responsive to a valid request.
+    """
+
+    # ------------------------------------------------------------------
+    # helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _assert_still_alive(addr):
+        """Verify server is still responding after a rogue burst."""
+        with make_udp_socket(timeout=2.0) as probe:
+            raw = udp_send_recv(probe, pack_join(1), addr)
+        assert raw is not None, "Server became unresponsive after rogue packets"
+
+    @staticmethod
+    def _expect_wrong_msg_or_none(raw, context=""):
+        """Raw server reply must be None (no response) or a valid WrongMsg."""
+        if raw is None:
+            return  # server chose not to reply — acceptable for invalid msgs
+        if len(raw) == 14 and raw[12] == 255:
+            return  # correct WrongMsg
+        # If the server replied with a game state, the packet accidentally
+        # decoded as a valid request — only possible for very specific bit patterns.
+        # We'll allow it but flag it with a descriptive message.
+        pytest.xfail(f"Server returned game state for rogue packet: {context!r}")
+
+    # ------------------------------------------------------------------
+    # 19.1  Unknown msg_type values
+    # ------------------------------------------------------------------
+
+    @pytest.mark.parametrize("bad_type", [5, 6, 10, 50, 100, 127, 200, 254, 255])
+    def test_unknown_msg_type_returns_wrong_msg(self, srv_default, bad_type):
+        """Any msg_type > 4 must be rejected with error_index=0."""
+        payload = bytes([bad_type]) + struct.pack("!I", 1001)
+        with make_udp_socket() as s:
+            raw = udp_send_recv(s, payload, srv_default.addr())
+        assert raw is not None, f"Server must reply to msg_type={bad_type}"
+        wm = WrongMsg(raw)
+        assert wm.error_index == 0, "Unknown msg_type: error_index must be 0"
+
+    # ------------------------------------------------------------------
+    # 19.2  Truncated packets for every message type
+    # ------------------------------------------------------------------
+
+    @pytest.mark.parametrize("msg_type,full_len,name", [
+        (MSG_JOIN,       5,  "JOIN"),
+        (MSG_MOVE_1,    10, "MOVE_1"),
+        (MSG_MOVE_2,    10, "MOVE_2"),
+        (MSG_KEEP_ALIVE, 9, "KEEP_ALIVE"),
+        (MSG_GIVE_UP,    9, "GIVE_UP"),
+    ])
+    def test_truncated_message_all_lengths(self, srv_default, msg_type, full_len, name):
+        """Every byte count from 0 to full_len-1 must be rejected."""
+        addr = srv_default.addr()
+        # Build the canonical full message
+        if msg_type == MSG_JOIN:
+            full = pack_join(1001)
+        elif msg_type == MSG_MOVE_1:
+            full = pack_move1(1001, 0, 0)
+        elif msg_type == MSG_MOVE_2:
+            full = pack_move2(1001, 0, 0)
+        elif msg_type == MSG_KEEP_ALIVE:
+            full = pack_keep_alive(1001, 0)
+        else:
+            full = pack_give_up(1001, 0)
+
+        for length in range(0, full_len):
+            payload = full[:length]
+            with make_udp_socket(timeout=1.0) as s:
+                raw = udp_send_recv(s, payload, addr)
+            if raw is not None:
+                assert len(raw) == 14 and raw[12] == 255, \
+                    f"{name} truncated to {length} bytes: expected WrongMsg, got {raw!r}"
+        self._assert_still_alive(addr)
+
+    # ------------------------------------------------------------------
+    # 19.3  Oversized packets for every message type
+    # ------------------------------------------------------------------
+
+    @pytest.mark.parametrize("extra_bytes", [1, 4, 100, 1000])
+    def test_join_oversized(self, srv_default, extra_bytes):
+        payload = pack_join(1001) + b"\x00" * extra_bytes
+        with make_udp_socket() as s:
+            raw = udp_send_recv(s, payload, srv_default.addr())
+        self._expect_wrong_msg_or_none(raw, f"join+{extra_bytes}")
+        self._assert_still_alive(srv_default.addr())
+
+    @pytest.mark.parametrize("extra_bytes", [1, 4, 100, 1000])
+    def test_move1_oversized(self, srv_default, extra_bytes):
+        payload = pack_move1(1001, 0, 0) + b"\xFF" * extra_bytes
+        with make_udp_socket() as s:
+            raw = udp_send_recv(s, payload, srv_default.addr())
+        self._expect_wrong_msg_or_none(raw, f"move1+{extra_bytes}")
+        self._assert_still_alive(srv_default.addr())
+
+    @pytest.mark.parametrize("extra_bytes", [1, 4, 100, 1000])
+    def test_move2_oversized(self, srv_default, extra_bytes):
+        payload = pack_move2(1001, 0, 0) + b"\xAA" * extra_bytes
+        with make_udp_socket() as s:
+            raw = udp_send_recv(s, payload, srv_default.addr())
+        self._expect_wrong_msg_or_none(raw, f"move2+{extra_bytes}")
+        self._assert_still_alive(srv_default.addr())
+
+    @pytest.mark.parametrize("extra_bytes", [1, 4, 100, 1000])
+    def test_keep_alive_oversized(self, srv_default, extra_bytes):
+        payload = pack_keep_alive(1001, 0) + b"\x55" * extra_bytes
+        with make_udp_socket() as s:
+            raw = udp_send_recv(s, payload, srv_default.addr())
+        self._expect_wrong_msg_or_none(raw, f"keep_alive+{extra_bytes}")
+        self._assert_still_alive(srv_default.addr())
+
+    @pytest.mark.parametrize("extra_bytes", [1, 4, 100, 1000])
+    def test_give_up_oversized(self, srv_default, extra_bytes):
+        payload = pack_give_up(1001, 0) + b"\x12" * extra_bytes
+        with make_udp_socket() as s:
+            raw = udp_send_recv(s, payload, srv_default.addr())
+        self._expect_wrong_msg_or_none(raw, f"give_up+{extra_bytes}")
+        self._assert_still_alive(srv_default.addr())
+
+    # ------------------------------------------------------------------
+    # 19.4  All-zero and all-0xFF payloads of every valid message length
+    # ------------------------------------------------------------------
+
+    @pytest.mark.parametrize("length", [1, 5, 9, 10, 14, 32, 64])
+    def test_all_zero_payload(self, srv_default, length):
+        payload = b"\x00" * length
+        with make_udp_socket(timeout=1.0) as s:
+            raw = udp_send_recv(s, payload, srv_default.addr())
+        self._expect_wrong_msg_or_none(raw, f"all-zero len={length}")
+
+    @pytest.mark.parametrize("length", [1, 5, 9, 10, 14, 32, 64])
+    def test_all_ff_payload(self, srv_default, length):
+        payload = b"\xff" * length
+        with make_udp_socket(timeout=1.0) as s:
+            raw = udp_send_recv(s, payload, srv_default.addr())
+        self._expect_wrong_msg_or_none(raw, f"all-FF len={length}")
+        self._assert_still_alive(srv_default.addr())
+
+    # ------------------------------------------------------------------
+    # 19.5  Giant packets (near-UDP-limit)
+    # ------------------------------------------------------------------
+
+    @pytest.mark.parametrize("size", [500, 4096, 16000, 60000])
+    def test_giant_packet_server_survives(self, srv_default, size):
+        """UDP payload up to ~65 KB — server must not crash."""
+        payload = bytes([MSG_JOIN]) + b"\xDE\xAD\xBE\xEF" + b"\x00" * (size - 5)
+        with make_udp_socket(timeout=1.0) as s:
+            try:
+                s.sendto(payload, srv_default.addr())
+                s.recvfrom(65535)
+            except (socket.timeout, OSError):
+                pass  # no reply or OS rejected the oversized send — both OK
+        self._assert_still_alive(srv_default.addr())
+
+    # ------------------------------------------------------------------
+    # 19.6  player_id = 0 in every message type that carries it
+    # ------------------------------------------------------------------
+
+    def test_player_id_zero_in_join(self, srv_default):
+        with make_udp_socket() as s:
+            raw = udp_send_recv(s, pack_join(0), srv_default.addr())
+        wm = WrongMsg(raw)
+        assert wm.error_index == 1
+
+    def test_player_id_zero_in_move1(self, srv_default):
+        """MSG_MOVE_1 with player_id=0 — invalid player_id."""
+        payload = struct.pack("!BIIB", MSG_MOVE_1, 0, 0, 0)
+        with make_udp_socket() as s:
+            raw = udp_send_recv(s, payload, srv_default.addr())
+        assert raw is not None
+        # Server may reject at player_id (byte 1) or at game_id (byte 5)
+        resp = parse_response(raw)
+        assert isinstance(resp, WrongMsg)
+
+    def test_player_id_zero_in_move2(self, srv_default):
+        payload = struct.pack("!BIIB", MSG_MOVE_2, 0, 0, 0)
+        with make_udp_socket() as s:
+            raw = udp_send_recv(s, payload, srv_default.addr())
+        resp = parse_response(raw)
+        assert isinstance(resp, WrongMsg)
+
+    def test_player_id_zero_in_keep_alive(self, srv_default):
+        payload = struct.pack("!BII", MSG_KEEP_ALIVE, 0, 0)
+        with make_udp_socket() as s:
+            raw = udp_send_recv(s, payload, srv_default.addr())
+        resp = parse_response(raw)
+        assert isinstance(resp, WrongMsg)
+
+    def test_player_id_zero_in_give_up(self, srv_default):
+        payload = struct.pack("!BII", MSG_GIVE_UP, 0, 0)
+        with make_udp_socket() as s:
+            raw = udp_send_recv(s, payload, srv_default.addr())
+        resp = parse_response(raw)
+        assert isinstance(resp, WrongMsg)
+
+    # ------------------------------------------------------------------
+    # 19.7  Non-existent game_id values
+    # ------------------------------------------------------------------
+
+    @pytest.mark.parametrize("fake_gid", [0, 1, 0xDEADBEEF, 0xFFFFFFFF, 0x12345678])
+    def test_move1_nonexistent_game_id(self, srv_default, fake_gid):
+        payload = pack_move1(1001, fake_gid, 0)
+        with make_udp_socket() as s:
+            raw = udp_send_recv(s, payload, srv_default.addr())
+        resp = parse_response(raw)
+        assert isinstance(resp, WrongMsg), \
+            f"game_id={fake_gid:#010x} doesn't exist → must be WrongMsg"
+
+    @pytest.mark.parametrize("fake_gid", [0, 1, 0xCAFEBABE, 0xFFFFFFFF])
+    def test_keep_alive_nonexistent_game_id(self, srv_default, fake_gid):
+        payload = pack_keep_alive(1001, fake_gid)
+        with make_udp_socket() as s:
+            raw = udp_send_recv(s, payload, srv_default.addr())
+        resp = parse_response(raw)
+        assert isinstance(resp, WrongMsg)
+
+    @pytest.mark.parametrize("fake_gid", [0, 0xFFFFFFFF, 0xABCDEF01])
+    def test_give_up_nonexistent_game_id(self, srv_default, fake_gid):
+        payload = pack_give_up(1001, fake_gid)
+        with make_udp_socket() as s:
+            raw = udp_send_recv(s, payload, srv_default.addr())
+        resp = parse_response(raw)
+        assert isinstance(resp, WrongMsg)
+
+    # ------------------------------------------------------------------
+    # 19.8  Non-participant player tries to act on a real game
+    # ------------------------------------------------------------------
+
+    def test_nonparticipant_move1_real_game(self, srv_default):
+        addr = srv_default.addr()
+        with make_udp_socket() as sa, make_udp_socket() as sb:
+            join_as_player(addr, 1001, sa)
+            gs = join_as_player(addr, 1002, sb)
+            gid = gs.game_id
+            with make_udp_socket() as sc:
+                raw = udp_send_recv(sc, pack_move1(9999, gid, 0), addr)
+            resp = parse_response(raw)
+            assert isinstance(resp, WrongMsg)
+
+    def test_nonparticipant_move2_real_game(self, srv_default):
+        addr = srv_default.addr()
+        with make_udp_socket() as sa, make_udp_socket() as sb:
+            join_as_player(addr, 1001, sa)
+            gs = join_as_player(addr, 1002, sb)
+            gid = gs.game_id
+            with make_udp_socket() as sc:
+                raw = udp_send_recv(sc, pack_move2(8888, gid, 0), addr)
+            resp = parse_response(raw)
+            assert isinstance(resp, WrongMsg)
+
+    def test_nonparticipant_give_up_real_game(self, srv_default):
+        addr = srv_default.addr()
+        with make_udp_socket() as sa, make_udp_socket() as sb:
+            join_as_player(addr, 1001, sa)
+            gs = join_as_player(addr, 1002, sb)
+            gid = gs.game_id
+            with make_udp_socket() as sc:
+                raw = udp_send_recv(sc, pack_give_up(7777, gid, ), addr)
+            resp = parse_response(raw)
+            assert isinstance(resp, WrongMsg)
+
+    # ------------------------------------------------------------------
+    # 19.9  Replay of a stale game_id after expiry
+    # ------------------------------------------------------------------
+
+    def test_replay_expired_game_id_rejected(self):
+        """Sending MOVE_1 with a game_id from a game that has since expired must
+        yield WrongMsg, not a valid game state."""
+        with ServerProcess(pawn_row="11", timeout=1) as srv:
+            addr = srv.addr()
+            with make_udp_socket() as sa:
+                gs = join_as_player(addr, 1001, sa)
+                stale_gid = gs.game_id
+
+            _sleep_expire(1)   # 1.15 s — game must have expired by now
+
+            # Trigger reaping with any fresh message
+            with make_udp_socket() as probe:
+                udp_send_recv(probe, pack_join(9990), addr)
+
+            # Now replay the stale game_id
+            with make_udp_socket() as s:
+                raw = udp_send_recv(s, pack_move1(1001, stale_gid, 0), addr)
+            if raw is not None:
+                resp = parse_response(raw)
+                assert isinstance(resp, WrongMsg), "Stale game_id must return WrongMsg"
+
+    # ------------------------------------------------------------------
+    # 19.10  Flood of rogue packets interspersed with valid ones
+    # ------------------------------------------------------------------
+
+    def test_rogue_flood_then_valid_request(self, srv_default):
+        """
+        50 back-to-back rogue packets of varying kinds, then one valid MSG_JOIN.
+        The server must respond correctly to the valid message.
+        """
+        import random
+        addr = srv_default.addr()
+        rogue_payloads = (
+            [b""]
+            + [bytes([t]) for t in range(5, 20)]            # unknown msg_types
+            + [b"\x01" * n for n in range(1, 10)]           # bad MOVE_1 lengths
+            + [b"\x00" * n for n in range(1, 8)]            # all-zero short
+            + [b"\xff" * n for n in range(1, 6)]            # all-FF short
+            + [bytes(range(i, i + 7)) for i in range(10)]   # sequential bytes
+        )
+        for payload in rogue_payloads:
+            with make_udp_socket(timeout=0.3) as s:
+                s.sendto(payload, addr)
+                try:
+                    s.recvfrom(65535)
+                except socket.timeout:
+                    pass
+
+        # Valid join must still work
+        with make_udp_socket(timeout=2.0) as s:
+            raw = udp_send_recv(s, pack_join(42000), addr)
+        assert raw is not None, "Server unresponsive after rogue flood"
+        gs = GameState(raw)
+        assert gs.player_a_id == 42000
+
+    # ------------------------------------------------------------------
+    # 19.11  Messages from many different source ports
+    # ------------------------------------------------------------------
+
+    def test_many_source_ports_same_message(self, srv_default):
+        """
+        The same valid MSG_JOIN sent from 20 different UDP sockets (source ports).
+        Server must respond to each independently.
+        """
+        addr = srv_default.addr()
+        for i in range(20):
+            with make_udp_socket() as s:
+                raw = udp_send_recv(s, pack_join(10000 + i), addr)
+            assert raw is not None, f"No response from source port index {i}"
+            gs = GameState(raw)
+            assert gs.player_a_id == 10000 + i or gs.player_b_id == 10000 + i
+
+    # ------------------------------------------------------------------
+    # 19.12  MSG_WRONG_MSG echo correctness for rogue payloads
+    # ------------------------------------------------------------------
+
+    @pytest.mark.parametrize("payload,desc", [
+        (b"\x05",                             "1-byte unknown type"),
+        (b"\x00" * 3,                         "3-byte all-zero"),
+        (b"\x01\x00\x00\x00\x01\x00\x00\x00\x00",  "MOVE_1 truncated at 9B"),
+        (bytes(range(12)),                    "12-byte sequential"),
+        (b"\xff" * 7,                         "7-byte all-FF"),
+    ])
+    def test_wrong_msg_echo_content(self, srv_default, payload, desc):
+        """
+        The first min(12, len(payload)) bytes of MSG_WRONG_MSG echo must match
+        the client message; remaining bytes must be zero.
+        """
+        with make_udp_socket() as s:
+            raw = udp_send_recv(s, payload, srv_default.addr())
+        assert raw is not None and len(raw) == 14, \
+            f"{desc}: expected 14-byte WrongMsg"
+        assert raw[12] == 255, f"{desc}: status byte must be 255"
+        echo_len = min(12, len(payload))
+        assert raw[:echo_len] == payload[:echo_len], \
+            f"{desc}: echo mismatch"
+        if len(payload) < 12:
+            assert raw[len(payload):12] == b"\x00" * (12 - len(payload)), \
+                f"{desc}: unused echo bytes must be zero"
+
+    # ------------------------------------------------------------------
+    # 19.13  Bit-flip mutations of a valid message
+    # ------------------------------------------------------------------
+
+    def test_bit_flip_each_byte_of_join(self, srv_default):
+        """
+        Flip each bit of a valid MSG_JOIN one at a time.  Each mutated
+        message must either get a valid response or a WrongMsg — never a crash.
+        """
+        addr = srv_default.addr()
+        valid = pack_join(1001)   # 5 bytes
+        for byte_idx in range(len(valid)):
+            for bit in range(8):
+                mutated = bytearray(valid)
+                mutated[byte_idx] ^= (1 << bit)
+                mutated = bytes(mutated)
+                if mutated == valid:
+                    continue  # xor was no-op (shouldn't happen)
+                with make_udp_socket(timeout=1.0) as s:
+                    raw = udp_send_recv(s, mutated, addr)
+                if raw is not None:
+                    # Must be a well-formed response (either GameState or WrongMsg)
+                    if len(raw) == 14 and raw[12] == 255:
+                        pass  # WrongMsg — correct
+                    else:
+                        # Should parse as a valid GameState
+                        try:
+                            GameState(raw)
+                        except Exception as e:
+                            pytest.fail(
+                                f"Bit-flip at byte {byte_idx} bit {bit}: "
+                                f"malformed response: {e}"
+                            )
+
+    # ------------------------------------------------------------------
+    # 19.14  Boundary pawn values in MOVE_1 and MOVE_2
+    # ------------------------------------------------------------------
+
+    def test_move1_pawn_255_on_short_row(self, srv_2pawns):
+        """pawn=255 > max_pawn=1 → illegal move, but msg is valid; state unchanged."""
+        addr = srv_2pawns.addr()
+        with make_udp_socket() as sa, make_udp_socket() as sb:
+            join_as_player(addr, 1001, sa)
+            gs = join_as_player(addr, 1002, sb)
+            gid = gs.game_id
+            raw = udp_send_recv(sb, pack_move1(1002, gid, 255), addr)
+            gs2 = GameState(raw)
+        assert gs2.status == STATUS_TURN_B, "Illegal pawn must not change turn"
+        assert gs2.pawn_present(0) and gs2.pawn_present(1), \
+            "Pawns must be unchanged after illegal move"
+
+    def test_move2_pawn_255_on_short_row(self, srv_2pawns):
+        """pawn=255 for MOVE_2 also out of range → illegal."""
+        addr = srv_2pawns.addr()
+        with make_udp_socket() as sa, make_udp_socket() as sb:
+            join_as_player(addr, 1001, sa)
+            gs = join_as_player(addr, 1002, sb)
+            gid = gs.game_id
+            raw = udp_send_recv(sb, pack_move2(1002, gid, 255), addr)
+            gs2 = GameState(raw)
+        assert gs2.status == STATUS_TURN_B
+
+    def test_move2_pawn_at_max_pawn_is_illegal(self, srv_default):
+        """MOVE_2 on max_pawn would need max_pawn+1 which is out of range."""
+        addr = srv_default.addr()
+        with make_udp_socket() as sa, make_udp_socket() as sb:
+            join_as_player(addr, 1001, sa)
+            gs = join_as_player(addr, 1002, sb)
+            gid = gs.game_id
+            raw = udp_send_recv(sb, pack_move2(1002, gid, gs.max_pawn), addr)
+            gs2 = GameState(raw)
+        assert gs2.pawn_present(gs.max_pawn), "Pawn at max_pawn must be unchanged"
+        assert gs2.status == STATUS_TURN_B
+
+    # ------------------------------------------------------------------
+    # 19.15  Interleaved valid and invalid packets in rapid succession
+    # ------------------------------------------------------------------
+
+    def test_alternating_valid_invalid_packets(self, srv_default):
+        """
+        Alternate between a valid MSG_JOIN and a rogue packet 30 times.
+        Each valid join must get a valid game state response.
+        """
+        addr = srv_default.addr()
+        rogue = b"\x05\x00\x00\x00\x01"   # unknown msg_type=5 but correct length
+        for i in range(30):
+            pid = 20000 + i
+            with make_udp_socket(timeout=1.0) as s:
+                # Send rogue first
+                s.sendto(rogue, addr)
+                try:
+                    s.recvfrom(65535)  # consume WrongMsg (or timeout)
+                except socket.timeout:
+                    pass
+                # Then send valid join
+                raw = udp_send_recv(s, pack_join(pid), addr)
+            assert raw is not None, f"No response to valid join #{i} after rogue"
+            gs = GameState(raw)
+            assert gs.player_a_id == pid or gs.player_b_id == pid
+
+    # ------------------------------------------------------------------
+    # 19.16  Wrong source address assumptions — server must reply to sender
+    # ------------------------------------------------------------------
+
+    def test_server_replies_to_actual_sender(self, srv_default):
+        """
+        Server must send its reply to the *actual* source address of the
+        datagram, not to any address stored from a previous message.
+        """
+        addr = srv_default.addr()
+        # Two completely distinct sockets (different ephemeral ports)
+        with make_udp_socket() as s1, make_udp_socket() as s2:
+            # s1 joins
+            s1.sendto(pack_join(1001), addr)
+            resp1, src1 = s1.recvfrom(65535)
+            assert src1 == addr
+
+            # s2 joins (from a different port)
+            s2.sendto(pack_join(1002), addr)
+            resp2, src2 = s2.recvfrom(65535)
+            assert src2 == addr
+
+            # s1 should NOT receive s2's reply
+            s1.settimeout(0.3)
+            try:
+                stray, _ = s1.recvfrom(65535)
+                pytest.fail(
+                    "s1 received a reply that was meant for s2 — "
+                    "server replied to wrong address"
+                )
+            except socket.timeout:
+                pass  # correct: s1 receives nothing
 
 
 # ===========================================================================

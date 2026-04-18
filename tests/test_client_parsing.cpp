@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <cstring>
 
+using namespace kayles_client;
+
 // ---------------------------------------------------------------------------
 // Helper: extract a big-endian uint32_t from a byte buffer at the given offset.
 // ---------------------------------------------------------------------------

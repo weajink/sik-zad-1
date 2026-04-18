@@ -138,5 +138,5 @@ namespace kayles_common {
         }
         return timeout;
     }
-};  // namespace kayles_common
+}  // namespace kayles_common
 #endif

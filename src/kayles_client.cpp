@@ -1,10 +1,13 @@
 #include <getopt.h>
-#include <kayles_client.h>
+#include "kayles_client.h"
 #include <sys/socket.h>
 #include <unistd.h>
 
 #include <iostream>
 #include <string_view>
+
+using namespace kayles_common;
+using namespace kayles_client;
 
 constexpr std::string_view USAGE_STR =
     "Usage: ./kayles_client -p <port> -a <address> -m <message> -t <client_timeout>\n";
@@ -32,6 +35,10 @@ int main(int argc, char *argv[]) {
             case 'p': {
                 auto res = parse_port(optarg);
                 if (!res.has_value()) {
+                    return 1;
+                }
+                if (res.value() == 0) {
+                    std::cerr << "Port number must be non-zero for client messages.\n";
                     return 1;
                 }
                 port = res.value();
@@ -62,12 +69,13 @@ int main(int argc, char *argv[]) {
             }
         }
     }
-    if (!has_address || !has_port || !has_message || !has_timeout) {
+    if (!has_address || !has_port || !has_message || !has_timeout
+        || optind < argc) {
         std::cerr << USAGE_STR;
         return 1;
     }
 
-    struct sockaddr_in server_addr;
+    struct sockaddr_in server_addr{};
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr = address;
     server_addr.sin_port = htons(port);
@@ -101,7 +109,7 @@ int main(int argc, char *argv[]) {
     }
 
     char buffer[1024];
-    struct sockaddr_in from_addr;
+    struct sockaddr_in from_addr{};
     socklen_t from_len = sizeof(from_addr);
     ssize_t recv_bytes =
         recvfrom(sock_fd, buffer, sizeof(buffer), 0, (struct sockaddr *)&from_addr, &from_len);
@@ -126,7 +134,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Dispatch based on status byte at offset 12
-    constexpr size_t STATUS_OFFSET = PLAYER_ID_SIZE + PLAYER_ID_SIZE + GAME_ID_SIZE;
+    constexpr size_t STATUS_OFFSET = GAME_ID_SIZE + PLAYER_ID_SIZE + PLAYER_ID_SIZE;
     if (static_cast<size_t>(recv_bytes) <= STATUS_OFFSET) {
         std::cerr << "Response too short.\n";
         close(sock_fd);
@@ -135,11 +143,11 @@ int main(int argc, char *argv[]) {
 
     uint8_t status = static_cast<uint8_t>(buffer[STATUS_OFFSET]);
     if (status == MSG_WRONG_STATUS) {
-        WrongMessage wrong;
+        WrongMessage wrong{};
         std::memcpy(&wrong, buffer, sizeof(wrong));
         std::cout << wrong << "\n";
     } else {
-        game_state_t state;
+        game_state_t state{};
         std::memcpy(&state, buffer, static_cast<size_t>(recv_bytes));
         std::cout << state << "\n";
     }

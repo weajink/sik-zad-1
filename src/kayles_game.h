@@ -1,21 +1,23 @@
 #ifndef KAYLES_GAME_H
 #define KAYLES_GAME_H
 
-#include <kayles_common.h>
+#include "kayles_common.h"
 
 #include <algorithm>
 #include <cassert>
 #include <cstring>
 #include <ctime>
 #include <expected>
+#include <limits>
 #include <map>
 #include <stdexcept>
 #include <utility>
 #include <vector>
-
-using namespace kayles_common;
+#include <chrono>
 
 namespace kayles_game {
+    using namespace kayles_common;
+
     class KaylesGame {
        public:
         enum class Status : uint8_t { WAITING_FOR_OPPONENT, TURN_A, TURN_B, WIN_A, WIN_B };
@@ -24,8 +26,8 @@ namespace kayles_game {
         uint32_t game_id;
         uint32_t player_a_id;
         uint32_t player_b_id = 0;
-        time_t player_a_last_move_time;
-        time_t player_b_last_move_time = 0;
+        std::chrono::steady_clock::time_point player_a_last_move_time;
+        std::chrono::steady_clock::time_point player_b_last_move_time;
 
         Status status;
         uint8_t max_pawn;
@@ -59,7 +61,7 @@ namespace kayles_game {
         KaylesGame(uint32_t game_id, uint32_t player_a_id, uint8_t max_pawn, pawn_row_t pawn_row)
             : game_id(game_id),
               player_a_id(player_a_id),
-              player_a_last_move_time(time(NULL)),
+              player_a_last_move_time(std::chrono::steady_clock::now()),
               status(Status::WAITING_FOR_OPPONENT),
               max_pawn(max_pawn),
               pawn_row(pawn_row) {
@@ -72,10 +74,10 @@ namespace kayles_game {
         // Updates player move time.
         void keep_alive(uint32_t player_id) {
             if (player_id == player_a_id) {
-                player_a_last_move_time = time(NULL);
+                player_a_last_move_time = std::chrono::steady_clock::now();
             }
             if (player_id == player_b_id) {
-                player_b_last_move_time = time(NULL);
+                player_b_last_move_time = std::chrono::steady_clock::now();
             }
         }
 
@@ -85,7 +87,7 @@ namespace kayles_game {
             }
             assert(this->player_b_id == 0);
             this->player_b_id = player_b_id;
-            player_b_last_move_time = time(NULL);
+            player_b_last_move_time = std::chrono::steady_clock::now();
             status = Status::TURN_B;
         }
 
@@ -112,7 +114,7 @@ namespace kayles_game {
                 if (!take_two_consecutive_pawns(pawn))
                     return;
             } else
-                assert(false);
+                throw std::invalid_argument("Number of pawsn can be only 1 or 2.");
 
             if (pawns_left_in_row == 0) {
                 if (status == Status::TURN_A)
@@ -139,24 +141,24 @@ namespace kayles_game {
         // Checks if the game can be qualified as
         // stale according to server_timeout
         // and deleted.
-        bool check_timeouts(timeout_t server_timeout) {
+        bool check_timeouts(std::chrono::seconds server_timeout) {
+            auto now = std::chrono::steady_clock::now();
             switch (status) {
-                case Status::TURN_A:
-                    if (time(NULL) - player_a_last_move_time > server_timeout) {
+                case Status::TURN_A: case Status::TURN_B: {
+                    if (now - player_a_last_move_time > server_timeout) {
                         status = Status::WIN_B;
                     }
-                    return false;
-                case Status::TURN_B:
-                    if (time(NULL) - player_b_last_move_time > server_timeout) {
+                    if (now - player_b_last_move_time > server_timeout) {
                         status = Status::WIN_A;
                     }
                     return false;
+                } 
+                case Status::WAITING_FOR_OPPONENT: {
+                    return now - player_a_last_move_time > server_timeout;
+                } 
                 default: {
-                    time_t now = time(NULL);
-                    // std::min of time differences = time since the most recent
-                    // message
-                    return (std::min(now - player_a_last_move_time, now - player_b_last_move_time) >
-                            server_timeout);
+                    return (now - player_a_last_move_time > server_timeout)
+                        && (now - player_b_last_move_time > server_timeout);
                 }
             }
         }
@@ -191,7 +193,7 @@ namespace kayles_game {
 
         void check_timeouts() {
             for (auto it = games.begin(); it != games.end();) {
-                if (it->second.check_timeouts(timeout)) {
+                if (it->second.check_timeouts(std::chrono::seconds(timeout))) {
                     it = games.erase(it);
                 } else {
                     ++it;
@@ -203,7 +205,7 @@ namespace kayles_game {
         KaylesGameMap(timeout_t timeout, uint8_t max_pawn, pawn_row_t pawn_row)
             : timeout(timeout), max_pawn(max_pawn), pawn_row(pawn_row) {}
 
-        game_state_t join(uint32_t player_id) {
+        std::optional<game_state_t> join(uint32_t player_id) {
             check_timeouts();
 
             // check if the last game is waiting for opponent
@@ -212,13 +214,21 @@ namespace kayles_game {
                 auto &game = games.rbegin()->second;
                 game.join_player_b(player_id);
                 return game.get_game_state();
-            } else {
-                // or create new game
-                uint32_t game_id = next_game_id++;
-                auto [it, _] =
-                    games.emplace(game_id, KaylesGame(game_id, player_id, max_pawn, pawn_row));
-                return it->second.get_game_state();
             }
+
+            // All 2^32 game IDs in use — spec says silently ignore the JOIN.
+            if (games.size() > std::numeric_limits<uint32_t>::max()) {
+                return std::nullopt;
+            }
+
+            // Find an unused game_id (after wraparound, some IDs may be taken).
+            while (games.contains(next_game_id)) {
+                ++next_game_id;
+            }
+            uint32_t game_id = next_game_id++;
+            auto [it, _] =
+                games.emplace(game_id, KaylesGame(game_id, player_id, max_pawn, pawn_row));
+            return it->second.get_game_state();
         }
 
         std::expected<game_state_t, KaylesGameError> move(uint32_t player_id, uint32_t game_id,
@@ -271,6 +281,6 @@ namespace kayles_game {
             return game.get_game_state();
         }
     };
-};  // namespace kayles_game
+}  // namespace kayles_game
 
 #endif

@@ -2,8 +2,8 @@
 #define KAYLES_SERVER_H
 
 #include <arpa/inet.h>
-#include <kayles_common.h>
-#include <kayles_game.h>
+#include "kayles_common.h"
+#include "kayles_game.h"
 #include <unistd.h>
 
 #include <cassert>
@@ -13,10 +13,10 @@
 #include <optional>
 #include <stdexcept>
 
-using namespace kayles_common;
-using namespace kayles_game;
-
 namespace kayles_server {
+    using namespace kayles_common;
+    using namespace kayles_game;
+
     inline std::expected<ClientMessage, error_index_t> get_message_from_buffer(const char *buf,
                                                                                size_t len) {
         ClientMessage res{};
@@ -83,7 +83,7 @@ namespace kayles_server {
 
         // Server bindings
         int socket_fd = -1;
-        struct sockaddr_in server_address;
+        struct sockaddr_in server_address{};
 
         KaylesGameMap game_map;
 
@@ -125,10 +125,17 @@ namespace kayles_server {
             }
         }
 
-        std::expected<game_state_t, KaylesGameError> process_message(const ClientMessage &msg) {
+        // Outer nullopt = silently ignore (spec 3.3: JOIN when no game can be created).
+        std::optional<std::expected<game_state_t, KaylesGameError>> process_message(
+            const ClientMessage &msg) {
             switch (msg.msg_type) {
-                case ClientMessageType::MSG_JOIN:
-                    return game_map.join(msg.player_id);
+                case ClientMessageType::MSG_JOIN: {
+                    auto state = game_map.join(msg.player_id);
+                    if (!state.has_value()) {
+                        return std::nullopt;
+                    }
+                    return state.value();
+                }
                 case ClientMessageType::MSG_MOVE_1:
                     return game_map.move(msg.player_id, msg.game_id, msg.pawn, 1);
                 case ClientMessageType::MSG_MOVE_2:
@@ -158,7 +165,7 @@ namespace kayles_server {
             memset(buffer, 0, sizeof(buffer));
 
             int flags = 0;
-            struct sockaddr_in client_address;
+            struct sockaddr_in client_address{};
             socklen_t address_length = (socklen_t)sizeof(client_address);
 
             ssize_t received_length = recvfrom(socket_fd, buffer, CLIENT_MESSAGE_SIZE, flags,
@@ -169,7 +176,11 @@ namespace kayles_server {
 
             auto msg = get_message_from_buffer(buffer, received_length);
             if (msg.has_value()) {
-                auto result = process_message(msg.value());
+                auto outcome = process_message(msg.value());
+                if (!outcome.has_value()) {
+                    return;  // silently ignore (e.g., game IDs exhausted on JOIN)
+                }
+                auto &result = outcome.value();
                 if (result.has_value()) {
                     auto &state = result.value();
                     size_t state_size =
@@ -205,6 +216,6 @@ namespace kayles_server {
         }
     };
 
-};  // namespace kayles_server
+}  // namespace kayles_server
 
 #endif

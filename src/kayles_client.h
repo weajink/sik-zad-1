@@ -3,7 +3,7 @@
 
 #include <arpa/inet.h>
 #include <errno.h>
-#include <kayles_common.h>
+#include "kayles_common.h"
 
 #include <cstring>
 #include <iostream>
@@ -11,14 +11,15 @@
 #include <string_view>
 #include <vector>
 
-using namespace kayles_common;
+namespace kayles_client {
+    using namespace kayles_common;
 
-struct WireMessage {
-    uint8_t data[CLIENT_MESSAGE_SIZE];
-    size_t len;
-};
+    struct WireMessage {
+        uint8_t data[CLIENT_MESSAGE_SIZE];
+        size_t len;
+    };
 
-inline std::optional<WireMessage> parse_client_message(std::string_view message_str) {
+    inline std::optional<WireMessage> parse_client_message(std::string_view message_str) {
     if (message_str.empty()) {
         std::cerr << "Message cannot be empty.\n";
         return std::nullopt;
@@ -111,5 +112,6 @@ inline std::optional<WireMessage> parse_client_message(std::string_view message_
 
     return wire;
 }
+}  // namespace kayles_client
 
 #endif

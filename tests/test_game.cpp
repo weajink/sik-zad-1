@@ -382,7 +382,7 @@ TEST(GameIsStale, ActiveGameNotStaleImmediately) {
     KaylesGame g(0, 1, 1, row);
     g.join_player_b(2);
     // Game just started, should not be stale with a large timeout.
-    EXPECT_FALSE(g.check_timeouts(99));
+    EXPECT_FALSE(g.check_timeouts(std::chrono::seconds(99)));
 }
 
 // --- Edge cases ---
@@ -449,8 +449,8 @@ TEST(GameTimeout, PlayerATimesOutDuringTurnA) {
     // time(NULL) - player_a_last_move_time > 0 should be true (at least 0 seconds have passed).
     // Actually the condition is strictly >, so we need at least 1 second. Use a tiny sleep.
     // Instead, let's just test with timeout=1 and verify the game doesn't immediately flip.
-    // For a deterministic test, check_timeouts(99) should NOT flip (just happened).
-    EXPECT_FALSE(g.check_timeouts(99));
+    // For a deterministic test, check_timeouts(std::chrono::seconds(99)) should NOT flip (just happened).
+    EXPECT_FALSE(g.check_timeouts(std::chrono::seconds(99)));
     EXPECT_EQ(get_status(g), 1);  // still TURN_A, not timed out with large timeout
 }
 
@@ -460,7 +460,7 @@ TEST(GameTimeout, PlayerBTimesOutDuringTurnB) {
     KaylesGame g(0, 1, 1, row);
     g.join_player_b(2);
     EXPECT_EQ(get_status(g), 2);  // TURN_B
-    EXPECT_FALSE(g.check_timeouts(99));
+    EXPECT_FALSE(g.check_timeouts(std::chrono::seconds(99)));
     EXPECT_EQ(get_status(g), 2);  // still TURN_B, not timed out
 }
 
@@ -472,7 +472,7 @@ TEST(GameTimeout, WaitingForOpponentCanBeDeleted) {
     KaylesGame g(0, 1, 0, row);
     EXPECT_EQ(get_status(g), 0);  // WAITING_FOR_OPPONENT
     // Just created, large timeout -> not deletable
-    EXPECT_FALSE(g.check_timeouts(99));
+    EXPECT_FALSE(g.check_timeouts(std::chrono::seconds(99)));
 }
 
 // --- Multiple moves alternating correctly until win ---

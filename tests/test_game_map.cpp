@@ -25,7 +25,7 @@ static pawn_row_t make_row_1() {
 
 TEST(KaylesGameMap, JoinFirstCreatesWaiting) {
     KaylesGameMap gm(60, 2, make_row_3());
-    auto state = gm.join(1);
+    auto state = gm.join(1).value();
     EXPECT_EQ(ntohl(state.game_id), 0u);
     EXPECT_EQ(ntohl(state.player_a_id), 1u);
     EXPECT_EQ(ntohl(state.player_b_id), 0u);
@@ -35,7 +35,7 @@ TEST(KaylesGameMap, JoinFirstCreatesWaiting) {
 TEST(KaylesGameMap, JoinSecondTransitionsToTurnB) {
     KaylesGameMap gm(60, 2, make_row_3());
     gm.join(1);
-    auto state = gm.join(2);
+    auto state = gm.join(2).value();
     EXPECT_EQ(ntohl(state.game_id), 0u);
     EXPECT_EQ(ntohl(state.player_a_id), 1u);
     EXPECT_EQ(ntohl(state.player_b_id), 2u);
@@ -46,7 +46,7 @@ TEST(KaylesGameMap, JoinThirdCreatesNewGame) {
     KaylesGameMap gm(60, 2, make_row_3());
     gm.join(1);
     gm.join(2);
-    auto state = gm.join(3);
+    auto state = gm.join(3).value();
     EXPECT_EQ(ntohl(state.game_id), 1u);
     EXPECT_EQ(ntohl(state.player_a_id), 3u);
     EXPECT_EQ(ntohl(state.player_b_id), 0u);
@@ -57,17 +57,17 @@ TEST(KaylesGameMap, JoinThirdCreatesNewGame) {
 
 TEST(KaylesGameMap, SequentialGameIds) {
     KaylesGameMap gm(60, 2, make_row_3());
-    auto s0 = gm.join(1);
+    auto s0 = gm.join(1).value();
     EXPECT_EQ(ntohl(s0.game_id), 0u);
 
     gm.join(2);  // fills game 0
 
-    auto s1 = gm.join(3);
+    auto s1 = gm.join(3).value();
     EXPECT_EQ(ntohl(s1.game_id), 1u);
 
     gm.join(4);  // fills game 1
 
-    auto s2 = gm.join(5);
+    auto s2 = gm.join(5).value();
     EXPECT_EQ(ntohl(s2.game_id), 2u);
 }
 
@@ -202,7 +202,7 @@ TEST(KaylesGameMap, GiveUpNotYourTurnDoesNotChangeStatus) {
 TEST(KaylesGameMap, KeepAliveDoesNotChangeState) {
     KaylesGameMap gm(60, 2, make_row_3());
     gm.join(1);
-    auto state_before = gm.join(2);  // TURN_B
+    auto state_before = gm.join(2).value();  // TURN_B
 
     auto result = gm.keep_alive(2, 0);
     ASSERT_TRUE(result.has_value());
@@ -267,7 +267,7 @@ TEST(KaylesGameMap, SamePlayerBothSides) {
     KaylesGameMap gm(60, 0, make_row_1());
 
     gm.join(42);
-    auto state = gm.join(42);  // same player joins as B
+    auto state = gm.join(42).value();  // same player joins as B
     EXPECT_EQ(ntohl(state.player_a_id), 42u);
     EXPECT_EQ(ntohl(state.player_b_id), 42u);
     EXPECT_EQ(state.status, 2);  // TURN_B
@@ -284,7 +284,7 @@ TEST(KaylesGameMap, SamePlayerBothSides) {
 TEST(KaylesGameMap, GameIdSequentialAcrossManyGames) {
     KaylesGameMap gm(60, 0, make_row_1());
     for (uint32_t i = 0; i < 10; i++) {
-        auto s = gm.join(i * 2 + 1);  // player A
+        auto s = gm.join(i * 2 + 1).value();  // player A
         EXPECT_EQ(ntohl(s.game_id), i);
         gm.join(i * 2 + 2);  // player B fills the game
     }
@@ -338,12 +338,12 @@ TEST(KaylesGameMap, SamePlayerJoinsOwnWaitingGame) {
     KaylesGameMap gm(60, 2, make_row_3());
 
     // Player 1 creates a game
-    auto s1 = gm.join(1);
+    auto s1 = gm.join(1).value();
     EXPECT_EQ(s1.status, 0);  // WAITING_FOR_OPPONENT
     EXPECT_EQ(ntohl(s1.player_a_id), 1u);
 
     // Player 1 joins again -> joins as player B (same player both sides)
-    auto s2 = gm.join(1);
+    auto s2 = gm.join(1).value();
     EXPECT_EQ(s2.status, 2);  // TURN_B
     EXPECT_EQ(ntohl(s2.player_a_id), 1u);
     EXPECT_EQ(ntohl(s2.player_b_id), 1u);

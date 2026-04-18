@@ -1,7 +1,7 @@
 #include <arpa/inet.h>
 #include <getopt.h>
-#include <kayles_common.h>
-#include <kayles_server.h>
+#include "kayles_common.h"
+#include "kayles_server.h"
 
 #include <cstring>
 #include <iostream>
@@ -97,7 +97,8 @@ int main(int argc, char *argv[]) {
             }
         }
     }
-    if (!has_row || !has_port || !has_address || !has_timeout) {
+    if (!has_row || !has_port || !has_address || !has_timeout
+        || optind < argc) {
         std::cerr << USAGE_STR;
         return 1;
     }
