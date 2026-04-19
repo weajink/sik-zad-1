@@ -17,6 +17,7 @@
 #include "kayles_error.h"
 #include "kayles_game.h"
 #include "kayles_protocol.h"
+#include "kayles_signal.h"
 #include "kayles_types.h"
 
 namespace kayles::server {
@@ -78,6 +79,7 @@ namespace kayles::server {
         }
 
         void shut() {
+            std::cerr << "kayles_server: shutting down\n";
             if (socket_fd >= 0) {
                 close(socket_fd);
                 socket_fd = -1;
@@ -135,6 +137,8 @@ namespace kayles::server {
                 recvfrom(socket_fd, buffer, CLIENT_MESSAGE_SIZE_WITH_BUF, flags,
                          (struct sockaddr *)&client_address, &address_length);
             if (received_length < 0) {
+                if (errno == EINTR)
+                    return;
                 throw std::runtime_error("recvfrom: " + std::string(strerror(errno)));
             }
 
@@ -158,7 +162,7 @@ namespace kayles::server {
         }
 
         void run() {
-            for (;;) {
+            while (!kayles::sig::shutdown_requested) {
                 run_server_loop();
             }
         }

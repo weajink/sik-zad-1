@@ -13,6 +13,7 @@
 
 #include "kayles_parse.h"
 #include "kayles_protocol.h"
+#include "kayles_signal.h"
 
 using namespace kayles::protocol;
 using namespace kayles::parse;
@@ -79,6 +80,8 @@ int main(int argc, char *argv[]) {
     server_addr.sin_addr = address;
     server_addr.sin_port = htons(port);
 
+    kayles::sig::install();
+
     int sock_fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock_fd < 0) {
         std::cerr << PROG << ": socket: " << strerror(errno) << "\n";
@@ -117,6 +120,9 @@ int main(int argc, char *argv[]) {
     if (recv_bytes < 0) {
         if (errno == EWOULDBLOCK || errno == EAGAIN) {
             std::cout << "No response from server (timeout).\n";
+            close(sock_fd);
+            return 0;
+        } else if (errno == EINTR) {
             close(sock_fd);
             return 0;
         } else {

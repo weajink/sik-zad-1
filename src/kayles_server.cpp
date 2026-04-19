@@ -9,6 +9,7 @@
 #include <string>
 
 #include "kayles_parse.h"
+#include "kayles_signal.h"
 
 using namespace kayles::server;
 using namespace kayles::parse;
@@ -64,6 +65,7 @@ int main(int argc, char *argv[]) {
     uint8_t max_pawn = opt_row.value().size() - 1;
     KaylesServer server(opt_address.value(), opt_port.value(), opt_timeout.value(), max_pawn,
                         opt_row.value());
+    kayles::sig::install();
     try {
         server.start();
         server.run();

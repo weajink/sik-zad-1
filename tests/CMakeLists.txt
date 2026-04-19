@@ -65,6 +65,11 @@ target_include_directories(test_integration_deeper PRIVATE ${PROJECT_SOURCE_DIR}
 add_test(NAME test_integration_deeper COMMAND test_integration_deeper)
 set_tests_properties(test_integration_deeper PROPERTIES TIMEOUT 180)
 
+add_executable(test_signal test_signal.cpp)
+target_link_libraries(test_signal PRIVATE GTest::gtest_main)
+target_include_directories(test_signal PRIVATE ${PROJECT_SOURCE_DIR}/src)
+add_test(NAME test_signal COMMAND test_signal)
+
 add_executable(test_cli test_cli.cpp)
 target_link_libraries(test_cli PRIVATE GTest::gtest_main)
 target_include_directories(test_cli PRIVATE ${PROJECT_SOURCE_DIR}/src)
