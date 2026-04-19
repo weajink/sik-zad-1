@@ -1,66 +1,60 @@
 #include <getopt.h>
-#include "kayles_client.h"
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <cerrno>
+#include <cstdint>
+#include <cstring>
 #include <iostream>
+#include <optional>
+#include <span>
 #include <string_view>
+#include <variant>
 
-using namespace kayles_common;
-using namespace kayles_client;
+#include "kayles_parse.h"
+#include "kayles_protocol.h"
+
+using namespace kayles::protocol;
+using namespace kayles::parse;
 
 constexpr std::string_view USAGE_STR =
     "Usage: ./kayles_client -p <port> -a <address> -m <message> -t <client_timeout>\n";
 
 int main(int argc, char *argv[]) {
-    address_t address;
-    bool has_address = false;
-    uint16_t port;
-    bool has_port = false;
-    WireMessage message;
-    bool has_message = false;
-    timeout_t client_timeout;
-    bool has_timeout = false;
+    std::optional<address_t> opt_address;
+    std::optional<uint16_t> opt_port;
+    std::optional<ClientMessage> opt_message;
+    std::optional<timeout_t> opt_timeout;
 
     int opt;
     while ((opt = getopt(argc, argv, "a:p:m:t:")) != -1) {
         switch (opt) {
             case 'a': {
-                if (!parse_address(address, optarg)) {
+                if (!assign_or_report(opt_address, parse_address(optarg))) {
                     return 1;
                 }
-                has_address = true;
                 break;
             }
             case 'p': {
-                auto res = parse_port(optarg);
-                if (!res.has_value()) {
+                if (!assign_or_report(opt_port, parse_port(optarg))) {
                     return 1;
                 }
-                if (res.value() == 0) {
+                if (opt_port.value() == 0) {
                     std::cerr << "Port number must be non-zero for client messages.\n";
                     return 1;
                 }
-                port = res.value();
-                has_port = true;
                 break;
             }
             case 't': {
-                auto res = parse_timeout(optarg);
-                if (!res.has_value()) {
+                if (!assign_or_report(opt_timeout, parse_timeout(optarg))) {
                     return 1;
                 }
-                client_timeout = res.value();
-                has_timeout = true;
                 break;
             }
             case 'm': {
-                auto res = parse_client_message(optarg);
-                if (!res.has_value()) {
+                if (!assign_or_report(opt_message, parse_client_message(optarg))) {
                     return 1;
                 }
-                message = res.value();
-                has_message = true;
                 break;
             }
             default: {
@@ -69,11 +63,16 @@ int main(int argc, char *argv[]) {
             }
         }
     }
-    if (!has_address || !has_port || !has_message || !has_timeout
+    if (!opt_address || !opt_port || !opt_message || !opt_timeout
         || optind < argc) {
         std::cerr << USAGE_STR;
         return 1;
     }
+
+    address_t address = opt_address.value();
+    uint16_t port = opt_port.value();
+    ClientMessage message = opt_message.value();
+    timeout_t client_timeout = opt_timeout.value();
 
     struct sockaddr_in server_addr{};
     server_addr.sin_family = AF_INET;
@@ -88,7 +87,7 @@ int main(int argc, char *argv[]) {
 
     // Set receive timeout
     struct timeval timeout;
-    timeout.tv_sec = client_timeout;
+    timeout.tv_sec = client_timeout.count();
     timeout.tv_usec = 0;
     if (setsockopt(sock_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
         std::cerr << "Failed to set socket timeout.\n";
@@ -96,13 +95,14 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    ssize_t sent_bytes = sendto(sock_fd, message.data, message.len, 0,
+    auto wire = message.serialize();
+    ssize_t sent_bytes = sendto(sock_fd, wire.data(), wire.size(), 0,
                                 (struct sockaddr *)&server_addr, sizeof(server_addr));
     if (sent_bytes < 0) {
         std::cerr << "Failed to send message to server.\n";
         close(sock_fd);
         return 1;
-    } else if (static_cast<size_t>(sent_bytes) != message.len) {
+    } else if (static_cast<size_t>(sent_bytes) != wire.size()) {
         std::cerr << "Incomplete message sent to server.\n";
         close(sock_fd);
         return 1;
@@ -133,24 +133,15 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    // Dispatch based on status byte at offset 12
-    constexpr size_t STATUS_OFFSET = GAME_ID_SIZE + PLAYER_ID_SIZE + PLAYER_ID_SIZE;
-    if (static_cast<size_t>(recv_bytes) <= STATUS_OFFSET) {
-        std::cerr << "Response too short.\n";
+    std::span<const uint8_t> response(reinterpret_cast<const uint8_t *>(buffer),
+                                      static_cast<size_t>(recv_bytes));
+    auto parsed = deserialize_server_message(response);
+    if (!parsed) {
+        std::cerr << "Malformed server response: " << parsed.error().what() << "\n";
         close(sock_fd);
         return 1;
     }
-
-    uint8_t status = static_cast<uint8_t>(buffer[STATUS_OFFSET]);
-    if (status == MSG_WRONG_STATUS) {
-        WrongMessage wrong{};
-        std::memcpy(&wrong, buffer, sizeof(wrong));
-        std::cout << wrong << "\n";
-    } else {
-        game_state_t state{};
-        std::memcpy(&state, buffer, static_cast<size_t>(recv_bytes));
-        std::cout << state << "\n";
-    }
+    std::visit([](const auto &m) { std::cout << m << "\n"; }, *parsed);
 
     close(sock_fd);
     return 0;
