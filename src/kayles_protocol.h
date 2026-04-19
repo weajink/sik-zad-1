@@ -3,6 +3,7 @@
 
 #include <arpa/inet.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -12,7 +13,6 @@
 #include <utility>
 #include <variant>
 #include <vector>
-#include <algorithm>
 
 #include "kayles_error.h"
 #include "kayles_types.h"
