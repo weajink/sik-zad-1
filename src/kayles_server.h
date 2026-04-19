@@ -165,7 +165,14 @@ namespace kayles::server {
 
         void run() {
             while (!kayles::sig::shutdown_requested) {
-                run_server_loop();
+                try {
+                    run_server_loop();
+                } catch (std::bad_alloc &) {
+                    // out of memory
+                    // but dont crash the server as
+                    // we have basic exception safety guarantee
+                    continue;
+                }
             }
         }
     };

@@ -6,6 +6,7 @@
 #include <cerrno>
 #include <cstring>
 #include <iostream>
+#include <string_view>
 
 namespace kayles::sig {
     inline volatile sig_atomic_t shutdown_requested = 0;
