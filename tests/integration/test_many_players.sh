@@ -29,8 +29,8 @@ for ((i = 0; i < NUM_GAMES; i++)); do
     # First player of the pair: creates a game in WAITING state.
     run_client "$PORT" "0/$player_a"
     assert_exit_code 0
-    assert_stdout_contains "Player A ID: $player_a"
-    assert_stdout_contains "Status: 0"
+    assert_stdout_contains "player_a=$player_a "
+    assert_stdout_contains "status=WAITING_FOR_OPPONENT"
 
     # Small delay to spread joins out "over time".
     sleep 0.05
@@ -38,11 +38,11 @@ for ((i = 0; i < NUM_GAMES; i++)); do
     # Second player: game starts, status TURN_B (2).
     run_client "$PORT" "0/$player_b"
     assert_exit_code 0
-    assert_stdout_contains "Player A ID: $player_a"
-    assert_stdout_contains "Player B ID: $player_b"
-    assert_stdout_contains "Status: 2"
+    assert_stdout_contains "player_a=$player_a "
+    assert_stdout_contains "player_b=$player_b "
+    assert_stdout_contains "status=TURN_B"
 
-    game_id=$(echo "$CLIENT_STDOUT" | grep "Game ID:" | head -1 | awk '{print $3}')
+    game_id=$(echo "$CLIENT_STDOUT" | grep -oE "game_id=[0-9]+" | head -1 | cut -d= -f2)
     if [[ -z "$game_id" ]]; then
         echo "  FAIL: could not parse game_id for pair ($player_a,$player_b)"
         exit 1
@@ -73,9 +73,9 @@ for ((i = 0; i < NUM_GAMES; i++)); do
 
     run_client "$PORT" "3/$player_a/$game_id"
     assert_exit_code 0
-    assert_stdout_contains "Status: 2"
-    assert_stdout_contains "Player A ID: $player_a"
-    assert_stdout_contains "Player B ID: $player_b"
+    assert_stdout_contains "status=TURN_B"
+    assert_stdout_contains "player_a=$player_a "
+    assert_stdout_contains "player_b=$player_b "
 done
 
 echo "Phase 3: finish each game — mix of full play, give-up, and one in-progress"
@@ -96,25 +96,25 @@ for ((i = 0; i < NUM_GAMES; i++)); do
             # B knocks pins 0,1 → TURN_A. A knocks pins 2,3 → WIN_A.
             run_client "$PORT" "2/$player_b/$game_id/0"
             assert_exit_code 0
-            assert_stdout_contains "Status: 1"
+            assert_stdout_contains "status=TURN_A"
 
             run_client "$PORT" "2/$player_a/$game_id/2"
             assert_exit_code 0
-            assert_stdout_contains "Status: 3"
+            assert_stdout_contains "status=WIN_A"
             finished_a=$((finished_a + 1))
             ;;
         1)
             # B gives up immediately → WIN_A (status 3).
             run_client "$PORT" "4/$player_b/$game_id"
             assert_exit_code 0
-            assert_stdout_contains "Status: 3"
+            assert_stdout_contains "status=WIN_A"
             finished_a=$((finished_a + 1))
             ;;
         2)
             # B makes one move only — game stays in progress (TURN_A).
             run_client "$PORT" "1/$player_b/$game_id/0"
             assert_exit_code 0
-            assert_stdout_contains "Status: 1"
+            assert_stdout_contains "status=TURN_A"
             in_progress=$((in_progress + 1))
             ;;
     esac
@@ -128,16 +128,16 @@ echo "Phase 4: finished games still respond to KEEP_ALIVE within timeout window"
 first_game="${GAME_IDS[0]}"
 run_client "$PORT" "3/1001/$first_game"
 assert_exit_code 0
-assert_stdout_contains "Status: 3"
+assert_stdout_contains "status=WIN_A"
 
 echo "Phase 5: a fresh JOIN after all the activity still creates a new game"
 
 # Player 9999 joins; should create a brand-new WAITING game with a unique ID.
 run_client "$PORT" "0/9999"
 assert_exit_code 0
-assert_stdout_contains "Player A ID: 9999"
-assert_stdout_contains "Status: 0"
-new_game_id=$(echo "$CLIENT_STDOUT" | grep "Game ID:" | head -1 | awk '{print $3}')
+assert_stdout_contains "player_a=9999 "
+assert_stdout_contains "status=WAITING_FOR_OPPONENT"
+new_game_id=$(echo "$CLIENT_STDOUT" | grep -oE "game_id=[0-9]+" | head -1 | cut -d= -f2)
 for existing in "${GAME_IDS[@]}"; do
     if [[ "$new_game_id" == "$existing" ]]; then
         echo "  FAIL: new game reused existing game_id=$new_game_id"

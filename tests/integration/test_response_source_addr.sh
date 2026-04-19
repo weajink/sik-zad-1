@@ -40,6 +40,13 @@ PY
 echo "Test 2: Two clients on different local ports each get their own response"
 python3 <<PY
 import socket, sys
+s0 = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+s0.settimeout(2.0)
+# Drain the WAITING game left over from Test 1 so our next two JOINs
+# land in a deterministic sequence (new game starts WAITING, then pairs).
+s0.sendto(bytes.fromhex('0000000099'), ('127.0.0.1', $PORT))
+s0.recvfrom(4096)
+
 s1 = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 s1.bind(('127.0.0.1', 0))
 s1.settimeout(2.0)

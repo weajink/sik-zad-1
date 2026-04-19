@@ -93,9 +93,10 @@ if [[ "${RESP:24:2}" != "ff" ]]; then
     echo "  FAIL: status should be 0xFF, got ${RESP:24:2}"
     exit 1
 fi
-# Error index for INVALID_PLAYER_ID = MSG_TYPE_SIZE = 1.
-if [[ "${RESP:26:2}" != "01" ]]; then
-    echo "  FAIL: error_index should be 0x01 (player_id offset), got ${RESP:26:2}"
+# Updated spec: nonzero player_id is never "invalid" — a player-not-in-game
+# mismatch is attributed to the game_id field at MSG_TYPE_SIZE + PLAYER_ID_SIZE = 5.
+if [[ "${RESP:26:2}" != "05" ]]; then
+    echo "  FAIL: error_index should be 0x05 (game_id offset), got ${RESP:26:2}"
     exit 1
 fi
 

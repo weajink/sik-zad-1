@@ -97,7 +97,7 @@ foreach(script ${INTEGRATION_TEST_SCRIPTS})
     # any hang fails the test.
     set_tests_properties(integration_${script_name} PROPERTIES
         TIMEOUT 60
-        REQUIRED_FILES "${PROJECT_SOURCE_DIR}/src/kayles_server;${PROJECT_SOURCE_DIR}/src/kayles_client"
+        ENVIRONMENT "KAYLES_SERVER_BIN=$<TARGET_FILE:kayles_server>;KAYLES_CLIENT_BIN=$<TARGET_FILE:kayles_client>"
     )
 endforeach()
 

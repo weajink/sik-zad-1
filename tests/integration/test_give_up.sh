@@ -18,13 +18,13 @@ assert_exit_code 0
 
 run_client "$PORT" "0/99"
 assert_exit_code 0
-assert_stdout_contains "Status: 2"
-GAME_ID=$(echo "$CLIENT_STDOUT" | grep "Game ID:" | head -1 | awk '{print $3}')
+assert_stdout_contains "status=TURN_B"
+GAME_ID=$(echo "$CLIENT_STDOUT" | grep -oE "game_id=[0-9]+" | head -1 | cut -d= -f2)
 
 # Player B (99) gives up
 # Format: 4/player_id/game_id
 run_client "$PORT" "4/99/$GAME_ID"
 assert_exit_code 0
-assert_stdout_contains "Status: 3"
+assert_stdout_contains "status=WIN_A"
 
 echo "All give_up tests passed."

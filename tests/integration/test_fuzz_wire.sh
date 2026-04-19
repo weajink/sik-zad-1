@@ -48,9 +48,10 @@ sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.settimeout(2.0)
 addr = ('127.0.0.1', port)
 
-# Server's buffer is CLIENT_MESSAGE_SIZE_WITH_BUF = 14 bytes (1 type + 4 player
-# + 4 game + 1 pawn + 2 buf). Any larger datagram is truncated server-side.
-CLIENT_BUF_SIZE = 14
+# Server's buffer is CLIENT_MESSAGE_SIZE_WITH_BUF = 12 bytes
+# (1 type + 4 player + 4 game + 1 pawn + 2 buf). Any larger datagram is
+# truncated server-side, so the server can only see up to 12 bytes.
+CLIENT_BUF_SIZE = 12
 SERVER_WRONG_MSG_LEN = 14  # 12 echo + status + error_index
 
 # expected message sizes per valid type (bytes the full wire message takes).

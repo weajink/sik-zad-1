@@ -3,8 +3,10 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-SERVER_BIN="$REPO_ROOT/src/kayles_server"
-CLIENT_BIN="$REPO_ROOT/src/kayles_client"
+# Prefer env vars (set by CTest via CMakeLists). Fall back to the Makefile
+# build location (src/) for people running scripts by hand.
+SERVER_BIN="${KAYLES_SERVER_BIN:-$REPO_ROOT/src/kayles_server}"
+CLIENT_BIN="${KAYLES_CLIENT_BIN:-$REPO_ROOT/src/kayles_client}"
 
 # Verify binaries exist
 if [[ ! -x "$SERVER_BIN" ]]; then

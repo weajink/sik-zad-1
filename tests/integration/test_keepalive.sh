@@ -18,21 +18,21 @@ assert_exit_code 0
 
 run_client "$PORT" "0/99"
 assert_exit_code 0
-assert_stdout_contains "Status: 2"
-GAME_ID=$(echo "$CLIENT_STDOUT" | grep "Game ID:" | head -1 | awk '{print $3}')
+assert_stdout_contains "status=TURN_B"
+GAME_ID=$(echo "$CLIENT_STDOUT" | grep -oE "game_id=[0-9]+" | head -1 | cut -d= -f2)
 SAVED_STDOUT="$CLIENT_STDOUT"
 
 # Send KEEP_ALIVE from player B (99)
 # Format: 3/player_id/game_id
 run_client "$PORT" "3/99/$GAME_ID"
 assert_exit_code 0
-assert_stdout_contains "Status: 2"
-assert_stdout_contains "Player A ID: 42"
-assert_stdout_contains "Player B ID: 99"
+assert_stdout_contains "status=TURN_B"
+assert_stdout_contains "player_a=42 "
+assert_stdout_contains "player_b=99"
 
 # Send KEEP_ALIVE from player A (42) too
 run_client "$PORT" "3/42/$GAME_ID"
 assert_exit_code 0
-assert_stdout_contains "Status: 2"
+assert_stdout_contains "status=TURN_B"
 
 echo "All keepalive tests passed."

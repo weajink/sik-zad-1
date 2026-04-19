@@ -27,16 +27,17 @@ run_client "$PORT" "0/99"
 assert_stdout_contains "status=TURN_B"
 GID=$(echo "$CLIENT_STDOUT" | grep -oE 'game_id=[0-9]+' | head -1 | cut -d= -f2)
 
-# A keeps sending KEEP_ALIVEs; B does not.
-# Sleep 2.5s to let B's timeout expire.
-sleep 2.5
-
-# A sends KEEP_ALIVE — this should trigger the server's timeout check and
-# transition the game to WIN_A (because B timed out).
+# A must keep its own clock fresh so it isn't the one timing out; otherwise
+# both sides are silent and the tie goes to whoever was silent first (A).
+# We send a KEEP_ALIVE from A before B's timeout would be reached.
+sleep 1.2
 run_client "$PORT" "3/42/$GID"
-# Expected: status=WIN_A. If the server incorrectly marked A as the loser
-# (because A didn't send messages either), we'd see WIN_B — which would be
-# wrong because A just sent the KA we received on.
+sleep 1.2
+
+# Now B has been silent for ~2.4s (> 2s), A has been silent for ~1.2s (< 2s).
+# A's final KEEP_ALIVE should trigger the server's timeout check; since A is
+# still fresh and B is stale, B loses → WIN_A.
+run_client "$PORT" "3/42/$GID"
 assert_stdout_contains "status=WIN_A"
 
 echo "All server_timeout_during_game tests passed."
