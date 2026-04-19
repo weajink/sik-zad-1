@@ -3,6 +3,10 @@
 
 #include <signal.h>
 
+#include <cerrno>
+#include <cstring>
+#include <iostream>
+
 namespace kayles::sig {
     inline volatile sig_atomic_t shutdown_requested = 0;
 
@@ -10,13 +14,23 @@ namespace kayles::sig {
         shutdown_requested = 1;
     }
 
-    inline void install() {
+    inline bool install(std::string_view prog) {
         struct sigaction sa {};
         sa.sa_handler = &handler;
-        sigemptyset(&sa.sa_mask);
+        if (sigemptyset(&sa.sa_mask) < 0) {
+            std::cerr << prog << ": sigemptyset: " << strerror(errno) << "\n";
+            return false;
+        }
         sa.sa_flags = 0;
-        sigaction(SIGINT, &sa, nullptr);
-        sigaction(SIGTERM, &sa, nullptr);
+        if (sigaction(SIGINT, &sa, nullptr) < 0) {
+            std::cerr << prog << ": sigaction(SIGINT): " << strerror(errno) << "\n";
+            return false;
+        }
+        if (sigaction(SIGTERM, &sa, nullptr) < 0) {
+            std::cerr << prog << ": sigaction(SIGTERM): " << strerror(errno) << "\n";
+            return false;
+        }
+        return true;
     }
 }  // namespace kayles::sig
 

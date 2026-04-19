@@ -79,9 +79,11 @@ namespace kayles::server {
         }
 
         void shut() {
-            std::cerr << "kayles_server: shutting down\n";
             if (socket_fd >= 0) {
-                close(socket_fd);
+                std::cerr << "kayles_server: shutting down\n";
+                if (close(socket_fd) < 0) {
+                    std::cerr << "kayles_server: close: " << strerror(errno) << "\n";
+                }
                 socket_fd = -1;
             }
         }

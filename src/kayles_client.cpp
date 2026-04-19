@@ -22,6 +22,12 @@ constexpr std::string_view PROG = "kayles_client";
 constexpr std::string_view USAGE_STR =
     "usage: kayles_client -p <port> -a <address> -m <message> -t <client_timeout>\n";
 
+static void safe_close(int fd) {
+    if (close(fd) < 0) {
+        std::cerr << PROG << ": close: " << strerror(errno) << "\n";
+    }
+}
+
 int main(int argc, char *argv[]) {
     std::optional<address_t> opt_address;
     std::optional<uint16_t> opt_port;
@@ -80,7 +86,9 @@ int main(int argc, char *argv[]) {
     server_addr.sin_addr = address;
     server_addr.sin_port = htons(port);
 
-    kayles::sig::install();
+    if (!kayles::sig::install(PROG)) {
+        return 1;
+    }
 
     int sock_fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock_fd < 0) {
@@ -94,7 +102,7 @@ int main(int argc, char *argv[]) {
     timeout.tv_usec = 0;
     if (setsockopt(sock_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
         std::cerr << PROG << ": setsockopt: " << strerror(errno) << "\n";
-        close(sock_fd);
+        safe_close(sock_fd);
         return 1;
     }
 
@@ -103,12 +111,12 @@ int main(int argc, char *argv[]) {
                                 (struct sockaddr *)&server_addr, sizeof(server_addr));
     if (sent_bytes < 0) {
         std::cerr << PROG << ": sendto: " << strerror(errno) << "\n";
-        close(sock_fd);
+        safe_close(sock_fd);
         return 1;
     } else if (static_cast<size_t>(sent_bytes) != wire.size()) {
         std::cerr << PROG << ": sendto: short write (" << sent_bytes << " of " << wire.size()
                   << " bytes)\n";
-        close(sock_fd);
+        safe_close(sock_fd);
         return 1;
     }
 
@@ -120,14 +128,14 @@ int main(int argc, char *argv[]) {
     if (recv_bytes < 0) {
         if (errno == EWOULDBLOCK || errno == EAGAIN) {
             std::cout << "No response from server (timeout).\n";
-            close(sock_fd);
+            safe_close(sock_fd);
             return 0;
         } else if (errno == EINTR) {
-            close(sock_fd);
+            safe_close(sock_fd);
             return 0;
         } else {
             std::cerr << PROG << ": recvfrom: " << strerror(errno) << "\n";
-            close(sock_fd);
+            safe_close(sock_fd);
             return 1;
         }
     }
@@ -136,7 +144,7 @@ int main(int argc, char *argv[]) {
     if (from_addr.sin_addr.s_addr != server_addr.sin_addr.s_addr ||
         from_addr.sin_port != server_addr.sin_port) {
         std::cerr << PROG << ": source: response from unexpected peer\n";
-        close(sock_fd);
+        safe_close(sock_fd);
         return 1;
     }
 
@@ -145,11 +153,11 @@ int main(int argc, char *argv[]) {
     auto parsed = deserialize_server_message(response);
     if (!parsed) {
         std::cerr << PROG << ": response: " << parsed.error().what() << "\n";
-        close(sock_fd);
+        safe_close(sock_fd);
         return 1;
     }
     std::visit([](const auto &m) { std::cout << m << "\n"; }, *parsed);
 
-    close(sock_fd);
+    safe_close(sock_fd);
     return 0;
 }

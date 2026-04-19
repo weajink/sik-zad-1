@@ -65,7 +65,9 @@ int main(int argc, char *argv[]) {
     uint8_t max_pawn = opt_row.value().size() - 1;
     KaylesServer server(opt_address.value(), opt_port.value(), opt_timeout.value(), max_pawn,
                         opt_row.value());
-    kayles::sig::install();
+    if (!kayles::sig::install(PROG)) {
+        return 1;
+    }
     try {
         server.start();
         server.run();
