@@ -43,16 +43,24 @@ using kayles::types::timeout_t;
 
 struct FakeClock : public Clock {
     time_point_t t{};
-    time_point_t now() const override { return t; }
-    void set(std::chrono::seconds s) { t = time_point_t{} + s; }
-    void advance(std::chrono::seconds d) { t += d; }
+    time_point_t now() const override {
+        return t;
+    }
+    void set(std::chrono::seconds s) {
+        t = time_point_t{} + s;
+    }
+    void advance(std::chrono::seconds d) {
+        t += d;
+    }
 };
 
 static std::shared_ptr<FakeClock> fake_clock() {
     return std::make_shared<FakeClock>();
 }
 
-static pawn_row_t solid(size_t n) { return pawn_row_t(n, true); }
+static pawn_row_t solid(size_t n) {
+    return pawn_row_t(n, true);
+}
 
 // ===========================================================================
 // Timeout-comparison: both silent past timeout
@@ -67,8 +75,8 @@ static pawn_row_t solid(size_t n) { return pawn_row_t(n, true); }
 TEST(KaylesGameBothSilentPastTimeout, TurnAEqualTimestampsTransitionsToTerminal) {
     auto clk = fake_clock();
     KaylesGame g(0u, 1u, 3u, solid(4), clk);
-    g.join_player_b(2u);         // TURN_B, both last = 0
-    g.move(2u, 0, 1);            // TURN_A, B-last bumped to 0; A-last = 0 (from ctor)
+    g.join_player_b(2u);  // TURN_B, both last = 0
+    g.move(2u, 0, 1);     // TURN_A, B-last bumped to 0; A-last = 0 (from ctor)
     clk->set(std::chrono::seconds(100));
     g.check_timeouts(std::chrono::seconds(10));
     auto st = g.get_status();
@@ -79,7 +87,7 @@ TEST(KaylesGameBothSilentPastTimeout, TurnAEqualTimestampsTransitionsToTerminal)
 TEST(KaylesGameBothSilentPastTimeout, TurnBEqualTimestampsTransitionsToTerminal) {
     auto clk = fake_clock();
     KaylesGame g(0u, 1u, 3u, solid(4), clk);
-    g.join_player_b(2u);         // TURN_B, both last = 0
+    g.join_player_b(2u);  // TURN_B, both last = 0
     clk->set(std::chrono::seconds(100));
     g.check_timeouts(std::chrono::seconds(10));
     auto st = g.get_status();
@@ -164,8 +172,7 @@ TEST(KaylesGameEdge, MaxPawn255AlternatingAllMove1Playout) {
     for (int k = 0; k < 256; ++k) {
         g.move(who, static_cast<size_t>(k), 1);
         ++moves;
-        ASSERT_FALSE(g.get_game_state().pawn_row[k])
-            << "pawn " << k << " must be knocked";
+        ASSERT_FALSE(g.get_game_state().pawn_row[k]) << "pawn " << k << " must be knocked";
         if (k == 255) {
             // 256 pins, B started. After 256 moves, who knocked last = B (even count).
             // Move count: B=1,A=2,B=3,...,k+1 move. B moves on odd counts (1,3,5,...).
@@ -213,9 +220,9 @@ TEST(KaylesGameMapIdAllocation, IdMonotonicAcrossFinishedAndStale) {
     auto clk = fake_clock();
     KaylesGameMap m(timeout_t{10}, 3u, solid(4), clk);
     ASSERT_EQ(m.join(1u)->game_id, 0u);
-    ASSERT_EQ(m.join(2u)->game_id, 0u);          // B joined game 0
-    ASSERT_EQ(m.join(3u)->game_id, 1u);          // new game 1 waiting
-    ASSERT_EQ(m.join(4u)->game_id, 1u);          // B joined game 1
+    ASSERT_EQ(m.join(2u)->game_id, 0u);  // B joined game 0
+    ASSERT_EQ(m.join(3u)->game_id, 1u);  // new game 1 waiting
+    ASSERT_EQ(m.join(4u)->game_id, 1u);  // B joined game 1
     // Game 0: finish via give_up(B).
     ASSERT_TRUE(m.give_up(2u, 0u).has_value());
     // Advance past timeout so game 0 is stale.
@@ -294,7 +301,7 @@ TEST(KaylesGameMapResurrection, FinishedGameNeverAcceptsNewJoin) {
     auto clk = fake_clock();
     KaylesGameMap m(timeout_t{10}, 3u, solid(4), clk);
     ASSERT_TRUE(m.join(1u).has_value());
-    ASSERT_TRUE(m.join(2u).has_value());  // game 0, TURN_B
+    ASSERT_TRUE(m.join(2u).has_value());         // game 0, TURN_B
     ASSERT_TRUE(m.give_up(2u, 0u).has_value());  // WIN_A
     // Now send JOIN again — this must create a NEW waiting game (id 1), not
     // resurrect game 0.
@@ -317,7 +324,8 @@ TEST(KaylesGameMapRemoval, AllOpsOnStaleRemovedGameFail) {
     // Trigger sweep via a new join:
     ASSERT_TRUE(m.join(2u).has_value());
     // game 0 is gone. Every op on game 0 must fail with INVALID_GAME_ID.
-    for (auto [op_name, r] : std::initializer_list<std::pair<const char*, std::expected<GameState, KaylesError>>>{
+    for (auto [op_name, r] :
+         std::initializer_list<std::pair<const char*, std::expected<GameState, KaylesError>>>{
              {"move1", m.move(1u, 0u, 0, 1)},
              {"move2", m.move(1u, 0u, 0, 2)},
              {"keep_alive", m.keep_alive(1u, 0u)},
@@ -427,17 +435,23 @@ TEST(KaylesGameMapScenario, FullGameEndsInWinA) {
     KaylesGameMap m(timeout_t{10}, 5u, solid(6), clk);
     ASSERT_TRUE(m.join(1u).has_value());
     ASSERT_TRUE(m.join(2u).has_value());
-    auto r1 = m.move(2u, 0u, 0, 1); ASSERT_TRUE(r1.has_value());
+    auto r1 = m.move(2u, 0u, 0, 1);
+    ASSERT_TRUE(r1.has_value());
     EXPECT_EQ(r1->status, GameStatus::TURN_A);
-    auto r2 = m.move(1u, 0u, 1, 1); ASSERT_TRUE(r2.has_value());
+    auto r2 = m.move(1u, 0u, 1, 1);
+    ASSERT_TRUE(r2.has_value());
     EXPECT_EQ(r2->status, GameStatus::TURN_B);
-    auto r3 = m.move(2u, 0u, 2, 1); ASSERT_TRUE(r3.has_value());
+    auto r3 = m.move(2u, 0u, 2, 1);
+    ASSERT_TRUE(r3.has_value());
     EXPECT_EQ(r3->status, GameStatus::TURN_A);
-    auto r4 = m.move(1u, 0u, 3, 1); ASSERT_TRUE(r4.has_value());
+    auto r4 = m.move(1u, 0u, 3, 1);
+    ASSERT_TRUE(r4.has_value());
     EXPECT_EQ(r4->status, GameStatus::TURN_B);
-    auto r5 = m.move(2u, 0u, 4, 1); ASSERT_TRUE(r5.has_value());
+    auto r5 = m.move(2u, 0u, 4, 1);
+    ASSERT_TRUE(r5.has_value());
     EXPECT_EQ(r5->status, GameStatus::TURN_A);
-    auto r6 = m.move(1u, 0u, 5, 1); ASSERT_TRUE(r6.has_value());
+    auto r6 = m.move(1u, 0u, 5, 1);
+    ASSERT_TRUE(r6.has_value());
     EXPECT_EQ(r6->status, GameStatus::WIN_A);
 }
 
@@ -479,10 +493,10 @@ TEST(KaylesGameMapCross, MoveByPlayerInMultipleGamesAffectsOnlyTargetedGame) {
     // Player 1 is in BOTH games. A move in g0 must not change g1.
     auto clk = fake_clock();
     KaylesGameMap m(timeout_t{10}, 3u, solid(4), clk);
-    ASSERT_TRUE(m.join(1u).has_value());       // g0, A=1
-    ASSERT_TRUE(m.join(5u).has_value());       // g0, B=5
-    ASSERT_TRUE(m.join(1u).has_value());       // g1, A=1 (same player)
-    ASSERT_TRUE(m.join(1u).has_value());       // g1, B=1 (same player)
+    ASSERT_TRUE(m.join(1u).has_value());  // g0, A=1
+    ASSERT_TRUE(m.join(5u).has_value());  // g0, B=5
+    ASSERT_TRUE(m.join(1u).has_value());  // g1, A=1 (same player)
+    ASSERT_TRUE(m.join(1u).has_value());  // g1, B=1 (same player)
     // g0 TURN_B → player 5 plays. g1 TURN_B → player 1 plays as B.
     ASSERT_TRUE(m.move(5u, 0u, 0, 1).has_value());  // knock pawn 0 in g0
     auto s1 = m.keep_alive(1u, 1u);

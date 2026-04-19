@@ -11,9 +11,8 @@
 //   - Round-trip for every status byte value from 0..4, 100, 254, 255.
 //   - Every client message type at the spec's boundary sizes.
 
-#include <gtest/gtest.h>
-
 #include <arpa/inet.h>
+#include <gtest/gtest.h>
 
 #include <array>
 #include <cstdint>
@@ -37,8 +36,7 @@ using kayles::types::player_id_t;
 static uint32_t read_u32_be(const std::vector<uint8_t>& buf, size_t offset) {
     return (static_cast<uint32_t>(buf[offset]) << 24) |
            (static_cast<uint32_t>(buf[offset + 1]) << 16) |
-           (static_cast<uint32_t>(buf[offset + 2]) << 8) |
-           static_cast<uint32_t>(buf[offset + 3]);
+           (static_cast<uint32_t>(buf[offset + 2]) << 8) | static_cast<uint32_t>(buf[offset + 3]);
 }
 
 // ===========================================================================
@@ -48,8 +46,8 @@ static uint32_t read_u32_be(const std::vector<uint8_t>& buf, size_t offset) {
 // ===========================================================================
 
 TEST(ProtocolByteOrder, ClientMessageJoinPlayerIdEveryByteIsMSBFirst) {
-    for (uint32_t pid : {0x01000000u, 0x00010000u, 0x00000100u, 0x00000001u,
-                         0xFF000000u, 0x00FF0000u, 0x0000FF00u, 0x000000FFu}) {
+    for (uint32_t pid : {0x01000000u, 0x00010000u, 0x00000100u, 0x00000001u, 0xFF000000u,
+                         0x00FF0000u, 0x0000FF00u, 0x000000FFu}) {
         ClientMessage m{ClientMessageType::MSG_JOIN, pid, 0u, 0u};
         auto bytes = m.serialize();
         ASSERT_EQ(bytes.size(), 5u);
@@ -62,8 +60,7 @@ TEST(ProtocolByteOrder, ClientMessageJoinPlayerIdEveryByteIsMSBFirst) {
 
 TEST(ProtocolByteOrder, GameStateAllThreeU32FieldsAreBigEndian) {
     // Distinct byte patterns at each field so any cross-field swap shows up.
-    GameState gs{0xA0B1C2D3u, 0x01234567u, 0x89ABCDEFu,
-                 GameStatus::TURN_A, 0u, {true}};
+    GameState gs{0xA0B1C2D3u, 0x01234567u, 0x89ABCDEFu, GameStatus::TURN_A, 0u, {true}};
     auto bytes = gs.serialize();
     ASSERT_GE(bytes.size(), 14u);
     EXPECT_EQ(read_u32_be(bytes, 0), 0xA0B1C2D3u);
@@ -81,8 +78,7 @@ TEST(ProtocolByteOrder, GameStateAllThreeU32FieldsAreBigEndian) {
 TEST(ProtocolByteOrder, DeserializeDoesNotInterpretLittleEndian) {
     // Hand-craft bytes for pid=0x01020304 big-endian.
     std::vector<uint8_t> bytes = {
-        /*msg_type=JOIN*/ 0,
-        0x01, 0x02, 0x03, 0x04,
+        /*msg_type=JOIN*/ 0, 0x01, 0x02, 0x03, 0x04,
     };
     auto r = deserialize_client_message(bytes);
     ASSERT_TRUE(r.has_value());
@@ -106,9 +102,9 @@ TEST(ProtocolBitmap, EverySinglePawnLitAtCorrectBit) {
         ASSERT_EQ(bytes.size(), 14u + 4u);
         for (size_t b = 0; b < 4; ++b) {
             uint8_t expected = 0;
-            if (k / 8 == b) expected = static_cast<uint8_t>(1u << (7 - k % 8));
-            EXPECT_EQ(bytes[14 + b], expected)
-                << "pawn=" << int(k) << " byte=" << b;
+            if (k / 8 == b)
+                expected = static_cast<uint8_t>(1u << (7 - k % 8));
+            EXPECT_EQ(bytes[14 + b], expected) << "pawn=" << int(k) << " byte=" << b;
         }
     }
 }
@@ -127,8 +123,7 @@ TEST(ProtocolBitmap, ExhaustiveSinglePawnLitMaxPawn255) {
             if (static_cast<size_t>(k / 8) == b) {
                 expected = static_cast<uint8_t>(1u << (7 - k % 8));
             }
-            ASSERT_EQ(bytes[14 + b], expected)
-                << "pawn=" << k << " byte=" << b;
+            ASSERT_EQ(bytes[14 + b], expected) << "pawn=" << k << " byte=" << b;
         }
     }
 }
@@ -136,9 +131,8 @@ TEST(ProtocolBitmap, ExhaustiveSinglePawnLitMaxPawn255) {
 TEST(ProtocolBitmap, ExcessBitsAreZeroed) {
     // For every max_pawn value, if all pins are up, the bitmap must have
     // exactly max_pawn+1 ones and all excess bits zero.
-    for (pawn_t mp : {pawn_t{0}, pawn_t{1}, pawn_t{6}, pawn_t{7},
-                      pawn_t{8}, pawn_t{9}, pawn_t{15}, pawn_t{16}, pawn_t{23},
-                      pawn_t{63}, pawn_t{64}, pawn_t{127}, pawn_t{128},
+    for (pawn_t mp : {pawn_t{0}, pawn_t{1}, pawn_t{6}, pawn_t{7}, pawn_t{8}, pawn_t{9}, pawn_t{15},
+                      pawn_t{16}, pawn_t{23}, pawn_t{63}, pawn_t{64}, pawn_t{127}, pawn_t{128},
                       pawn_t{240}, pawn_t{254}, pawn_t{255}}) {
         pawn_row_t row(static_cast<size_t>(mp) + 1, true);
         GameState gs{0u, 1u, 2u, GameStatus::TURN_A, mp, row};
@@ -153,8 +147,7 @@ TEST(ProtocolBitmap, ExcessBitsAreZeroed) {
             uint8_t mask = static_cast<uint8_t>(1u << (7 - bit % 8));
             bool actual = (bytes[byte_idx] & mask) != 0;
             bool expected = (bit <= static_cast<size_t>(mp));
-            ASSERT_EQ(actual, expected)
-                << "mp=" << int(mp) << " bit=" << bit;
+            ASSERT_EQ(actual, expected) << "mp=" << int(mp) << " bit=" << bit;
         }
     }
 }
@@ -192,7 +185,8 @@ TEST(ProtocolBitmap, BitmapDeserializeRecoversEveryBit) {
     // Deterministic pseudo-random pattern: every 3rd bit set.
     const pawn_t mp = 63;
     pawn_row_t row(64, false);
-    for (size_t i = 0; i < 64; ++i) row[i] = (i % 3 == 0);
+    for (size_t i = 0; i < 64; ++i)
+        row[i] = (i % 3 == 0);
     GameState gs{0u, 1u, 2u, GameStatus::TURN_A, mp, row};
     auto r = deserialize_game_state(gs.serialize());
     ASSERT_TRUE(r.has_value());
@@ -233,7 +227,7 @@ TEST(ProtocolSize, GiveUpExactlyNineBytes) {
 
 // Helper: fill buf[1..4] with a nonzero big-endian player_id so that
 // length-based success cases aren't rejected by the player_id==0 check.
-static void set_nonzero_player_id(std::vector<uint8_t> &buf) {
+static void set_nonzero_player_id(std::vector<uint8_t>& buf) {
     if (buf.size() >= 5) {
         buf[1] = 0;
         buf[2] = 0;
@@ -246,7 +240,8 @@ TEST(ProtocolDeserialize, SweepAllLengthsForJoin) {
     for (size_t n = 0; n < 16; ++n) {
         std::vector<uint8_t> buf(n, 0);
         // msg_type = 0 (JOIN) iff we put 0 at byte 0; but empty buffer fails before.
-        if (n > 0) buf[0] = 0;
+        if (n > 0)
+            buf[0] = 0;
         set_nonzero_player_id(buf);
         auto r = deserialize_client_message(buf);
         if (n == 5) {
@@ -260,7 +255,8 @@ TEST(ProtocolDeserialize, SweepAllLengthsForJoin) {
 TEST(ProtocolDeserialize, SweepAllLengthsForMove1) {
     for (size_t n = 0; n < 16; ++n) {
         std::vector<uint8_t> buf(n, 0);
-        if (n > 0) buf[0] = 1;
+        if (n > 0)
+            buf[0] = 1;
         set_nonzero_player_id(buf);
         auto r = deserialize_client_message(buf);
         if (n == 10) {
@@ -274,7 +270,8 @@ TEST(ProtocolDeserialize, SweepAllLengthsForMove1) {
 TEST(ProtocolDeserialize, SweepAllLengthsForMove2) {
     for (size_t n = 0; n < 16; ++n) {
         std::vector<uint8_t> buf(n, 0);
-        if (n > 0) buf[0] = 2;
+        if (n > 0)
+            buf[0] = 2;
         set_nonzero_player_id(buf);
         auto r = deserialize_client_message(buf);
         if (n == 10) {
@@ -288,7 +285,8 @@ TEST(ProtocolDeserialize, SweepAllLengthsForMove2) {
 TEST(ProtocolDeserialize, SweepAllLengthsForKeepAlive) {
     for (size_t n = 0; n < 16; ++n) {
         std::vector<uint8_t> buf(n, 0);
-        if (n > 0) buf[0] = 3;
+        if (n > 0)
+            buf[0] = 3;
         set_nonzero_player_id(buf);
         auto r = deserialize_client_message(buf);
         if (n == 9) {
@@ -302,7 +300,8 @@ TEST(ProtocolDeserialize, SweepAllLengthsForKeepAlive) {
 TEST(ProtocolDeserialize, SweepAllLengthsForGiveUp) {
     for (size_t n = 0; n < 16; ++n) {
         std::vector<uint8_t> buf(n, 0);
-        if (n > 0) buf[0] = 4;
+        if (n > 0)
+            buf[0] = 4;
         set_nonzero_player_id(buf);
         auto r = deserialize_client_message(buf);
         if (n == 9) {
@@ -320,10 +319,8 @@ TEST(ProtocolDeserialize, SweepMsgType5To255AllReject) {
             std::vector<uint8_t> buf(n, 0);
             buf[0] = static_cast<uint8_t>(t);
             auto r = deserialize_client_message(buf);
-            ASSERT_FALSE(r.has_value())
-                << "msg_type=" << t << " len=" << n;
-            EXPECT_EQ(r.error().type(), ErrorType::INVALID_MESSAGE_ARGUMENT)
-                << "msg_type=" << t;
+            ASSERT_FALSE(r.has_value()) << "msg_type=" << t << " len=" << n;
+            EXPECT_EQ(r.error().type(), ErrorType::INVALID_MESSAGE_ARGUMENT) << "msg_type=" << t;
             EXPECT_EQ(r.error().error_index(), 0u);
         }
     }
@@ -369,9 +366,10 @@ TEST(MessageWrongEchoPadding, ShortClientDataAndZeroTail) {
 
     auto bytes = w.serialize();
     ASSERT_EQ(bytes.size(), 14u);
-    for (size_t i = 0; i < 5; ++i) EXPECT_EQ(bytes[i], src[i]);
-    for (size_t i = 5; i < 12; ++i) EXPECT_EQ(bytes[i], 0u)
-        << "tail byte " << i << " must be zero";
+    for (size_t i = 0; i < 5; ++i)
+        EXPECT_EQ(bytes[i], src[i]);
+    for (size_t i = 5; i < 12; ++i)
+        EXPECT_EQ(bytes[i], 0u) << "tail byte " << i << " must be zero";
     EXPECT_EQ(bytes[12], 255u);
     EXPECT_EQ(bytes[13], 0u);
 }
@@ -411,7 +409,8 @@ TEST(ProtocolGameStateWire, MaxPawn255AllOnesBitmap) {
 
 TEST(ProtocolGameStateWire, MaxPawn255AlternatingBitmap) {
     pawn_row_t row(256, false);
-    for (size_t i = 0; i < 256; i += 2) row[i] = true;
+    for (size_t i = 0; i < 256; i += 2)
+        row[i] = true;
     GameState gs{0u, 1u, 2u, GameStatus::TURN_A, 255u, row};
     auto bytes = gs.serialize();
     ASSERT_EQ(bytes.size(), 14u + 32u);
@@ -429,12 +428,14 @@ TEST(ProtocolGameStateWire, MaxPawn255AlternatingBitmap) {
 
 TEST(MessageWrongSerialize, AllBytes0xFFPreservedAndStatusStillAppended) {
     MessageWrong w{};
-    for (auto& b : w.client_bytes) b = 0xFFu;
+    for (auto& b : w.client_bytes)
+        b = 0xFFu;
     w.status = 255u;
     w.error_index = 7u;
     auto bytes = w.serialize();
     ASSERT_EQ(bytes.size(), 14u);
-    for (size_t i = 0; i < 12; ++i) EXPECT_EQ(bytes[i], 0xFFu);
+    for (size_t i = 0; i < 12; ++i)
+        EXPECT_EQ(bytes[i], 0xFFu);
     EXPECT_EQ(bytes[12], 255u);
     EXPECT_EQ(bytes[13], 7u);
 }
@@ -486,8 +487,8 @@ TEST(ProtocolDeserialize, KeepAliveMsgTypeButTenByteBodyRejected) {
 // ===========================================================================
 
 TEST(ServerMessageDispatch, RoundTripEveryStatusEnum) {
-    for (auto st : {GameStatus::WAITING_FOR_OPPONENT, GameStatus::TURN_A,
-                    GameStatus::TURN_B, GameStatus::WIN_A, GameStatus::WIN_B}) {
+    for (auto st : {GameStatus::WAITING_FOR_OPPONENT, GameStatus::TURN_A, GameStatus::TURN_B,
+                    GameStatus::WIN_A, GameStatus::WIN_B}) {
         GameState gs{0u, 1u, 2u, st, 3u, {true, false, true, true}};
         auto bytes = gs.serialize();
         auto r = deserialize_server_message(bytes);

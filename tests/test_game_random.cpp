@@ -403,9 +403,8 @@ namespace {
             // Since some are not constructible for every random mid-game, we
             // tolerate asymmetry but each variant should still fire many
             // times across kIterations=200.
-            std::cerr << "[IllegalMoveInvariance coverage] total="
-                      << s.chosen_total << " regen=" << s.regenerated_mid_games
-                      << " out_of_range=" << s.out_of_range
+            std::cerr << "[IllegalMoveInvariance coverage] total=" << s.chosen_total
+                      << " regen=" << s.regenerated_mid_games << " out_of_range=" << s.out_of_range
                       << " already_knocked_move1=" << s.already_knocked_move1
                       << " move2_at_boundary=" << s.move2_at_boundary
                       << " move2_neighbor_knocked=" << s.move2_neighbor_knocked
@@ -427,7 +426,8 @@ TEST_P(IllegalMoveInvariance, NoMutationOnIllegalMove) {
 
     // Helper: try to produce a mid-game state. Returns the game by out-param
     // and fills `trace`. Returns the max_pawn on success.
-    auto build_mid_game = [&](pawn_t &max_pawn_out, pawn_row_t &row_out) -> std::unique_ptr<KaylesGame> {
+    auto build_mid_game = [&](pawn_t &max_pawn_out,
+                              pawn_row_t &row_out) -> std::unique_ptr<KaylesGame> {
         pawn_t max_pawn = static_cast<pawn_t>(std::uniform_int_distribution<int>(2, 40)(rng));
         pawn_row_t row(static_cast<size_t>(max_pawn) + 1, false);
         std::bernoulli_distribution coin(0.5);
@@ -515,7 +515,8 @@ TEST_P(IllegalMoveInvariance, NoMutationOnIllegalMove) {
                 if (!row_now[i])
                     knocked.push_back(i);
             if (!knocked.empty()) {
-                size_t p = knocked[std::uniform_int_distribution<size_t>(0, knocked.size() - 1)(rng)];
+                size_t p =
+                    knocked[std::uniform_int_distribution<size_t>(0, knocked.size() - 1)(rng)];
                 constructible.push_back(
                     {Kind::AlreadyKnockedMove1, on_turn, p, 1, "already_knocked_move1"});
             }
@@ -523,8 +524,8 @@ TEST_P(IllegalMoveInvariance, NoMutationOnIllegalMove) {
 
         // Variant: move_2 at boundary (first_pawn == max_pawn). Always constructible
         // regardless of row state — it's illegal because first_pawn+1 > max_pawn.
-        constructible.push_back(
-            {Kind::Move2AtBoundary, on_turn, static_cast<size_t>(max_pawn), 2, "move2_at_boundary"});
+        constructible.push_back({Kind::Move2AtBoundary, on_turn, static_cast<size_t>(max_pawn), 2,
+                                 "move2_at_boundary"});
 
         // Variant: move_2 where first_pawn is up but pawn+1 is knocked.
         {
@@ -534,7 +535,8 @@ TEST_P(IllegalMoveInvariance, NoMutationOnIllegalMove) {
                     candidates.push_back(i);
             }
             if (!candidates.empty()) {
-                size_t p = candidates[std::uniform_int_distribution<size_t>(0, candidates.size() - 1)(rng)];
+                size_t p = candidates[std::uniform_int_distribution<size_t>(
+                    0, candidates.size() - 1)(rng)];
                 constructible.push_back(
                     {Kind::Move2NeighborKnocked, on_turn, p, 2, "move2_neighbor_knocked"});
             }
@@ -572,8 +574,8 @@ TEST_P(IllegalMoveInvariance, NoMutationOnIllegalMove) {
         illegal_stats().regenerated_mid_games++;
     }
     ASSERT_LT(attempts, kMaxAttempts)
-        << "failed to find a mid-game with any constructible illegal variant after "
-        << kMaxAttempts << " attempts (seed=0x" << std::hex << seed << ")";
+        << "failed to find a mid-game with any constructible illegal variant after " << kMaxAttempts
+        << " attempts (seed=0x" << std::hex << seed << ")";
 
     trace.max_pawn = max_pawn;
     trace.initial = initial_row;
@@ -582,8 +584,8 @@ TEST_P(IllegalMoveInvariance, NoMutationOnIllegalMove) {
     const GameStatus status_before = gptr->get_status();
     ASSERT_TRUE(status_before == GameStatus::TURN_A || status_before == GameStatus::TURN_B);
 
-    const auto &sel = constructible[std::uniform_int_distribution<size_t>(
-        0, constructible.size() - 1)(rng)];
+    const auto &sel =
+        constructible[std::uniform_int_distribution<size_t>(0, constructible.size() - 1)(rng)];
 
     // Update coverage counters.
     illegal_stats().chosen_total++;
@@ -1150,11 +1152,12 @@ TEST_P(TimeoutAwardsOlderPlayerLoses, CorrectWinnerOnTimeout) {
     g.check_timeouts(server_timeout);
 
     EXPECT_EQ(g.get_status(), expected)
-        << desc << " scenario=" << scenario << " timeout=" << timeout_sec
-        << "s seed=0x" << std::hex << seed << " pre_status=" << status_before;
+        << desc << " scenario=" << scenario << " timeout=" << timeout_sec << "s seed=0x" << std::hex
+        << seed << " pre_status=" << status_before;
 }
 
-INSTANTIATE_TEST_SUITE_P(GameRandom, TimeoutAwardsOlderPlayerLoses, ::testing::Range(0, kIterations));
+INSTANTIATE_TEST_SUITE_P(GameRandom, TimeoutAwardsOlderPlayerLoses,
+                         ::testing::Range(0, kIterations));
 
 // ===========================================================================
 // Suite 10: TimeoutBoundaryExactness
@@ -1179,8 +1182,7 @@ TEST_P(TimeoutBoundaryExactness, StrictGreaterThanOnly) {
     auto build = [&]() {
         auto clk = make_fake_clock();
         clk->advance(std::chrono::seconds(1000));
-        auto g = std::make_unique<KaylesGame>(0u, 1u, /*max_pawn=*/4,
-                                              pawn_row_t(5, true), clk);
+        auto g = std::make_unique<KaylesGame>(0u, 1u, /*max_pawn=*/4, pawn_row_t(5, true), clk);
         g->join_player_b(2u);
         return std::pair{std::move(g), clk};
     };
@@ -1204,10 +1206,9 @@ TEST_P(TimeoutBoundaryExactness, StrictGreaterThanOnly) {
         clk->advance_by(std::chrono::nanoseconds(1));
         g->check_timeouts(server_timeout);
         EXPECT_NE(g->get_status(), GameStatus::TURN_B)
-            << "1ns past timeout must trigger (seed=0x" << std::hex << seed
-            << " T=" << timeout_sec << "s)";
-        EXPECT_TRUE(g->get_status() == GameStatus::WIN_A ||
-                    g->get_status() == GameStatus::WIN_B)
+            << "1ns past timeout must trigger (seed=0x" << std::hex << seed << " T=" << timeout_sec
+            << "s)";
+        EXPECT_TRUE(g->get_status() == GameStatus::WIN_A || g->get_status() == GameStatus::WIN_B)
             << "must transition to WIN_* (seed=0x" << std::hex << seed << ")";
     }
 
@@ -1263,8 +1264,8 @@ TEST_P(TimeoutDoesNothingInTerminalOrWaitingStatus, NoOp) {
         clk->advance(std::chrono::seconds(timeout_sec * 100 + 1));
         g.check_timeouts(T);
         EXPECT_EQ(g.get_status(), GameStatus::WAITING_FOR_OPPONENT)
-            << "check_timeouts must not transition out of WAITING (seed=0x"
-            << std::hex << seed << ")";
+            << "check_timeouts must not transition out of WAITING (seed=0x" << std::hex << seed
+            << ")";
     } else if (which == 1) {
         // WIN_A: give_up by player B in TURN_B.
         KaylesGame g(0u, 1u, /*max_pawn=*/3, pawn_row_t(4, true), clk);
@@ -1353,13 +1354,12 @@ TEST_P(IsStaleWaitingVsTerminal, AllFourCases) {
             // ...then freshen B only.
             g.keep_alive(2u);
             EXPECT_FALSE(g.is_stale(T))
-                << "WIN_B where only A past timeout must NOT be stale (seed=0x"
-                << std::hex << seed << ")";
+                << "WIN_B where only A past timeout must NOT be stale (seed=0x" << std::hex << seed
+                << ")";
             // Now advance past timeout from B's freshened time too.
             clk->advance(std::chrono::seconds(timeout_sec + 1));
-            EXPECT_TRUE(g.is_stale(T))
-                << "WIN_B where BOTH past timeout must be stale (seed=0x"
-                << std::hex << seed << ")";
+            EXPECT_TRUE(g.is_stale(T)) << "WIN_B where BOTH past timeout must be stale (seed=0x"
+                                       << std::hex << seed << ")";
             break;
         }
         case 3: {
@@ -1371,19 +1371,17 @@ TEST_P(IsStaleWaitingVsTerminal, AllFourCases) {
             clk->advance(std::chrono::seconds(timeout_sec * 3 + 1));
             g.keep_alive(1u);  // freshen A only
             EXPECT_FALSE(g.is_stale(T))
-                << "WIN_A where only B past timeout must NOT be stale (seed=0x"
-                << std::hex << seed << ")";
+                << "WIN_A where only B past timeout must NOT be stale (seed=0x" << std::hex << seed
+                << ")";
             clk->advance(std::chrono::seconds(timeout_sec + 1));
-            EXPECT_TRUE(g.is_stale(T))
-                << "WIN_A where BOTH past timeout must be stale (seed=0x"
-                << std::hex << seed << ")";
+            EXPECT_TRUE(g.is_stale(T)) << "WIN_A where BOTH past timeout must be stale (seed=0x"
+                                       << std::hex << seed << ")";
             break;
         }
     }
 }
 
-INSTANTIATE_TEST_SUITE_P(GameRandom, IsStaleWaitingVsTerminal,
-                         ::testing::Range(0, kIterations));
+INSTANTIATE_TEST_SUITE_P(GameRandom, IsStaleWaitingVsTerminal, ::testing::Range(0, kIterations));
 
 // ===========================================================================
 // Suite 13: KeepAliveDefersTimeout
@@ -1439,8 +1437,7 @@ TEST_P(KeepAliveDefersTimeout, KeepAliveResetsTimer) {
     g.check_timeouts(T);
     // Both timers are equally old, so else-if branch fires -> WIN_A.
     EXPECT_EQ(g.get_status(), GameStatus::WIN_A)
-        << "after fresh timeout both equally old -> WIN_A (seed=0x"
-        << std::hex << seed << ")";
+        << "after fresh timeout both equally old -> WIN_A (seed=0x" << std::hex << seed << ")";
 }
 
 INSTANTIATE_TEST_SUITE_P(GameRandom, KeepAliveDefersTimeout, ::testing::Range(0, kIterations));
@@ -1499,10 +1496,9 @@ TEST_P(MoveDefersTimeout, LegalAndIllegalMovesBothDefer) {
         // tick (since we don't advance between them). So a_last == b_last, and
         // the else-if branch fires -> WIN_A (the player whose timer gets measured
         // second, i.e. B is NOT strictly newer).
-        EXPECT_TRUE(g.get_status() == GameStatus::WIN_A ||
-                    g.get_status() == GameStatus::WIN_B)
-            << "after fresh T expired, some winner must be declared (seed=0x"
-            << std::hex << seed << ")";
+        EXPECT_TRUE(g.get_status() == GameStatus::WIN_A || g.get_status() == GameStatus::WIN_B)
+            << "after fresh T expired, some winner must be declared (seed=0x" << std::hex << seed
+            << ")";
     } else {
         // Illegal move: wrong player, but player_id == one of the real players.
         // Per source, move() calls keep_alive BEFORE the turn check, so the
@@ -1524,8 +1520,7 @@ TEST_P(MoveDefersTimeout, LegalAndIllegalMovesBothDefer) {
         // strictly newer. check_timeouts condition: now - b_last > T is
         // essentially `1ns > T` -> false. So no transition.
         EXPECT_EQ(g.get_status(), GameStatus::TURN_B)
-            << "illegal move must still defer caller's timer (seed=0x"
-            << std::hex << seed << ")";
+            << "illegal move must still defer caller's timer (seed=0x" << std::hex << seed << ")";
     }
 }
 
@@ -1567,16 +1562,14 @@ TEST_P(GiveUpDefersStaleness, GiverFreshnessDelaysStaleness) {
 
     // Now for WIN_*, is_stale requires BOTH past timeout. B's timer was just
     // reset, A's timer is very old. So NOT stale yet.
-    EXPECT_FALSE(g.is_stale(T))
-        << "immediately after give_up, giver is fresh -> not stale (seed=0x"
-        << std::hex << seed << ")";
+    EXPECT_FALSE(g.is_stale(T)) << "immediately after give_up, giver is fresh -> not stale (seed=0x"
+                                << std::hex << seed << ")";
 
     // Advance past timeout again from B's fresh time.
     clk->advance(std::chrono::seconds(timeout_sec));
     clk->advance_by(std::chrono::nanoseconds(1));
-    EXPECT_TRUE(g.is_stale(T))
-        << "once both A and B are past timeout, WIN_A is stale (seed=0x"
-        << std::hex << seed << ")";
+    EXPECT_TRUE(g.is_stale(T)) << "once both A and B are past timeout, WIN_A is stale (seed=0x"
+                               << std::hex << seed << ")";
 }
 
 INSTANTIATE_TEST_SUITE_P(GameRandom, GiveUpDefersStaleness, ::testing::Range(0, kIterations));
@@ -1622,8 +1615,7 @@ TEST_P(TimeoutVsGiveUpRace, OrderingMatters) {
         // — then since status was TURN_B and caller is B, status -> WIN_A.
         g.give_up(2u);
         EXPECT_EQ(g.get_status(), GameStatus::WIN_A)
-            << "give_up before check_timeouts yields WIN_A (seed=0x"
-            << std::hex << seed << ")";
+            << "give_up before check_timeouts yields WIN_A (seed=0x" << std::hex << seed << ")";
 
         // Subsequent check_timeouts is a no-op on WIN_A.
         g.check_timeouts(T);
@@ -1650,8 +1642,7 @@ TEST_P(TimeoutVsGiveUpRace, OrderingMatters) {
         const GameStatus before_giveup = g.get_status();
         g.give_up(2u);
         EXPECT_EQ(g.get_status(), before_giveup)
-            << "give_up after terminal status must be no-op (seed=0x"
-            << std::hex << seed << ")";
+            << "give_up after terminal status must be no-op (seed=0x" << std::hex << seed << ")";
     }
 
     // Both orderings produced WIN_A in this symmetric case. Now try an
@@ -1674,14 +1665,13 @@ TEST_P(TimeoutVsGiveUpRace, OrderingMatters) {
         auto snapshot_g = g;  // copy to test alternate ordering
         g.check_timeouts(T);
         EXPECT_EQ(g.get_status(), GameStatus::WIN_B)
-            << "A strictly older -> WIN_B when check_timeouts first (seed=0x"
-            << std::hex << seed << ")";
+            << "A strictly older -> WIN_B when check_timeouts first (seed=0x" << std::hex << seed
+            << ")";
 
         // Ordering 2b: give_up first on the copy.
         snapshot_g.give_up(2u);
         EXPECT_EQ(snapshot_g.get_status(), GameStatus::WIN_A)
-            << "A strictly older but B gave up first -> WIN_A (seed=0x"
-            << std::hex << seed << ")";
+            << "A strictly older but B gave up first -> WIN_A (seed=0x" << std::hex << seed << ")";
     }
 }
 
@@ -1725,8 +1715,8 @@ TEST_P(NonPlayerKeepAliveDoesNotDeferTimeout, NoEffect) {
     g.check_timeouts(T);
     // Both timers originated at joining (equal), so else-if branch -> WIN_A.
     EXPECT_EQ(g.get_status(), GameStatus::WIN_A)
-        << "stranger keep_alive must not defer timeout (stranger=" << stranger
-        << ", seed=0x" << std::hex << seed << ")";
+        << "stranger keep_alive must not defer timeout (stranger=" << stranger << ", seed=0x"
+        << std::hex << seed << ")";
 }
 
 INSTANTIATE_TEST_SUITE_P(GameRandom, NonPlayerKeepAliveDoesNotDeferTimeout,
@@ -1779,18 +1769,16 @@ TEST_P(MoveOnFinishedGameIsNoOp, NoMutationAfterWin) {
     const player_id_t winner = last_mover;
     const player_id_t loser = (winner == 1u) ? 2u : 1u;
     const std::vector<std::tuple<player_id_t, size_t, uint8_t>> attempts = {
-        {winner, 0u, uint8_t{1}},
-        {loser, 0u, uint8_t{1}},
-        {winner, 0u, uint8_t{2}},
-        {loser, static_cast<size_t>(mp), uint8_t{1}},
+        {winner, 0u, uint8_t{1}}, {loser, 0u, uint8_t{1}},
+        {winner, 0u, uint8_t{2}}, {loser, static_cast<size_t>(mp), uint8_t{1}},
         {9999u, 0u, uint8_t{1}},
     };
 
     for (const auto &[who, p, k] : attempts) {
         g.move(who, p, k);
         EXPECT_EQ(g.get_status(), final_status)
-            << "move on finished game changed status (seed=0x" << std::hex << seed
-            << " who=" << who << " p=" << p << " k=" << static_cast<unsigned>(k) << ")";
+            << "move on finished game changed status (seed=0x" << std::hex << seed << " who=" << who
+            << " p=" << p << " k=" << static_cast<unsigned>(k) << ")";
         EXPECT_EQ(g.get_game_state().pawn_row, row_final)
             << "move on finished game changed pawn_row (seed=0x" << std::hex << seed
             << " who=" << who << " p=" << p << " k=" << static_cast<unsigned>(k) << ")";

@@ -196,13 +196,20 @@ for i in range(300):
         continue
     # Any valid server response must be either GAME_STATE or WRONG_MSG.
     # Both carry the status byte at offset 12.
-    if len(resp) < 13:
-        failures.append(f"bitflip_join[{i}]: response too short: {resp.hex()}")
+    if len(resp) < 14:
+        failures.append(f"bitflip_join[{i}]: response too short ({len(resp)}): {resp.hex()}")
         continue
     status = resp[12]
-    if status not in (0, 1, 2, 3, 4, 0xFF):
-        failures.append(
-            f"bitflip_join[{i}]: invalid status byte {status}: {resp.hex()}")
+    if len(resp) == 14:
+        if status != 0xFF:
+            failures.append(
+                f"bitflip_join[{i}]: 14-byte response must be WRONG_MSG "
+                f"(status=0xFF), got status=0x{status:02x}: {resp.hex()}")
+    else:
+        if status not in (0, 1, 2, 3, 4):
+            failures.append(
+                f"bitflip_join[{i}]: GAME_STATE has invalid status {status}: "
+                f"{resp.hex()}")
 
 # ---------------------------------------------------------------------------
 # 1d. Bit-flip mutations of a valid MSG_MOVE_1.
@@ -220,13 +227,20 @@ for i in range(300):
     resp = recv_one(f"bitflip_move1[{i}]")
     if resp is None:
         continue
-    if len(resp) < 13:
-        failures.append(f"bitflip_move1[{i}]: response too short: {resp.hex()}")
+    if len(resp) < 14:
+        failures.append(f"bitflip_move1[{i}]: response too short ({len(resp)}): {resp.hex()}")
         continue
     status = resp[12]
-    if status not in (0, 1, 2, 3, 4, 0xFF):
-        failures.append(
-            f"bitflip_move1[{i}]: invalid status byte {status}: {resp.hex()}")
+    if len(resp) == 14:
+        if status != 0xFF:
+            failures.append(
+                f"bitflip_move1[{i}]: 14-byte response must be WRONG_MSG, "
+                f"got status=0x{status:02x}: {resp.hex()}")
+    else:
+        if status not in (0, 1, 2, 3, 4):
+            failures.append(
+                f"bitflip_move1[{i}]: GAME_STATE has invalid status {status}: "
+                f"{resp.hex()}")
 
 # ---------------------------------------------------------------------------
 # 1e. Bit-flip mutations of KEEP_ALIVE and GIVE_UP.
@@ -243,15 +257,22 @@ for base_type in (3, 4):
         resp = recv_one(f"bitflip_t{base_type}[{i}]")
         if resp is None:
             continue
-        if len(resp) < 13:
+        if len(resp) < 14:
             failures.append(
-                f"bitflip_t{base_type}[{i}]: response too short: {resp.hex()}")
+                f"bitflip_t{base_type}[{i}]: response too short ({len(resp)}): "
+                f"{resp.hex()}")
             continue
         status = resp[12]
-        if status not in (0, 1, 2, 3, 4, 0xFF):
-            failures.append(
-                f"bitflip_t{base_type}[{i}]: invalid status byte {status}: "
-                f"{resp.hex()}")
+        if len(resp) == 14:
+            if status != 0xFF:
+                failures.append(
+                    f"bitflip_t{base_type}[{i}]: 14-byte response must be "
+                    f"WRONG_MSG, got status=0x{status:02x}: {resp.hex()}")
+        else:
+            if status not in (0, 1, 2, 3, 4):
+                failures.append(
+                    f"bitflip_t{base_type}[{i}]: GAME_STATE has invalid "
+                    f"status {status}: {resp.hex()}")
 
 # ---------------------------------------------------------------------------
 # 1f. Responsiveness probe — after all that abuse, send a clean JOIN with a

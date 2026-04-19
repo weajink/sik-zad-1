@@ -449,7 +449,8 @@ TEST(GameTimeout, PlayerATimesOutDuringTurnA) {
     // time(NULL) - player_a_last_move_time > 0 should be true (at least 0 seconds have passed).
     // Actually the condition is strictly >, so we need at least 1 second. Use a tiny sleep.
     // Instead, let's just test with timeout=1 and verify the game doesn't immediately flip.
-    // For a deterministic test, check_timeouts(std::chrono::seconds(99)) should NOT flip (just happened).
+    // For a deterministic test, check_timeouts(std::chrono::seconds(99)) should NOT flip (just
+    // happened).
     EXPECT_FALSE(g.check_timeouts(std::chrono::seconds(99)));
     EXPECT_EQ(get_status(g), 1);  // still TURN_A, not timed out with large timeout
 }

@@ -49,7 +49,7 @@ namespace kayles::error {
         static KaylesError invalid_game_id();
         static KaylesError invalid_player_id();
         static KaylesError player_id_zero();
-        
+
         static KaylesError parse_error(const std::string &message) {
             return {ErrorType::PARSE_ERROR, "CLI parse error: " + message, 0};
         }

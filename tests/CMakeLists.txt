@@ -100,3 +100,31 @@ foreach(script ${INTEGRATION_TEST_SCRIPTS})
         REQUIRED_FILES "${PROJECT_SOURCE_DIR}/src/kayles_server;${PROJECT_SOURCE_DIR}/src/kayles_client"
     )
 endforeach()
+
+# -----------------------------------------------------------------------------
+# Randomized / fuzz-style integration tests (test_fuzz_*.sh). These are
+# heavier than the deterministic integration tests above: they run thousands
+# of packets through the server, spawn many subprocesses, and sleep across
+# server_timeout windows. Give them a much larger TIMEOUT.
+#
+# Each test reads RANDOM_SEED from the environment for reproducibility. CTest
+# inherits the caller's environment by default, so running
+#
+#     RANDOM_SEED=12345 ctest --test-dir build -R fuzz
+#
+# will pin every fuzz test to seed 12345. The seed is printed at the top of
+# every run.
+# -----------------------------------------------------------------------------
+file(GLOB FUZZ_INTEGRATION_TEST_SCRIPTS
+     "${CMAKE_CURRENT_SOURCE_DIR}/integration/test_fuzz_*.sh")
+foreach(script ${FUZZ_INTEGRATION_TEST_SCRIPTS})
+    get_filename_component(script_name "${script}" NAME_WE)
+    # Override the TIMEOUT set by the previous foreach. These tests can
+    # legitimately take a minute or more (e.g. the sequential 200-JOIN test,
+    # the fuzz-wire 3000-packet sweep, the timeout-retention tests that wait
+    # 2*server_timeout per sub-check, and the scale test that plays out 60
+    # concurrent games).
+    set_tests_properties(integration_${script_name} PROPERTIES
+        TIMEOUT 300
+    )
+endforeach()

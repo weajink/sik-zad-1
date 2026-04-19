@@ -18,6 +18,7 @@
 
 #include <arpa/inet.h>
 #include <fcntl.h>
+#include <gtest/gtest.h>
 #include <netinet/in.h>
 #include <signal.h>
 #include <sys/socket.h>
@@ -36,8 +37,6 @@
 #include <utility>
 #include <vector>
 
-#include <gtest/gtest.h>
-
 // clang-format off
 #include "kayles_protocol.h"
 #include "kayles_server.h"
@@ -54,176 +53,187 @@ using kayles::types::timeout_t;
 
 namespace {
 
-// RAII-safe server fixture: move-only, default destruction only happens once.
-// Returning by value uses an explicit std::move; any copy attempt is a compile
-// error, which makes it IMPOSSIBLE for a copy/destroy dance to kill the server
-// (the bug in the original test_integration.cpp fixture).
-struct ServerHandle {
-    pid_t pid = -1;
-    uint16_t port = 0;
+    // RAII-safe server fixture: move-only, default destruction only happens once.
+    // Returning by value uses an explicit std::move; any copy attempt is a compile
+    // error, which makes it IMPOSSIBLE for a copy/destroy dance to kill the server
+    // (the bug in the original test_integration.cpp fixture).
+    struct ServerHandle {
+        pid_t pid = -1;
+        uint16_t port = 0;
 
-    ServerHandle() = default;
-    ServerHandle(const ServerHandle&) = delete;
-    ServerHandle& operator=(const ServerHandle&) = delete;
-    ServerHandle(ServerHandle&& o) noexcept : pid(o.pid), port(o.port) { o.pid = -1; }
-    ServerHandle& operator=(ServerHandle&& o) noexcept {
-        if (this != &o) {
-            shutdown();
-            pid = o.pid;
-            port = o.port;
+        ServerHandle() = default;
+        ServerHandle(const ServerHandle&) = delete;
+        ServerHandle& operator=(const ServerHandle&) = delete;
+        ServerHandle(ServerHandle&& o) noexcept : pid(o.pid), port(o.port) {
             o.pid = -1;
         }
-        return *this;
-    }
-    ~ServerHandle() { shutdown(); }
-
-    void shutdown() {
-        if (pid > 0) {
-            ::kill(pid, SIGKILL);
-            int status = 0;
-            ::waitpid(pid, &status, 0);
-            pid = -1;
+        ServerHandle& operator=(ServerHandle&& o) noexcept {
+            if (this != &o) {
+                shutdown();
+                pid = o.pid;
+                port = o.port;
+                o.pid = -1;
+            }
+            return *this;
         }
-    }
-};
+        ~ServerHandle() {
+            shutdown();
+        }
 
-static uint16_t pick_ephemeral_port() {
-    int fd = ::socket(AF_INET, SOCK_DGRAM, 0);
-    sockaddr_in a{};
-    a.sin_family = AF_INET;
-    a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    a.sin_port = 0;
-    ::bind(fd, reinterpret_cast<sockaddr*>(&a), sizeof(a));
-    socklen_t l = sizeof(a);
-    ::getsockname(fd, reinterpret_cast<sockaddr*>(&a), &l);
-    ::close(fd);
-    return ntohs(a.sin_port);
-}
+        void shutdown() {
+            if (pid > 0) {
+                ::kill(pid, SIGKILL);
+                int status = 0;
+                ::waitpid(pid, &status, 0);
+                pid = -1;
+            }
+        }
+    };
 
-static ServerHandle spawn_server(const std::string& row_str,
-                                 timeout_t timeout = std::chrono::seconds(60)) {
-    uint16_t port = pick_ephemeral_port();
-    pawn_row_t row;
-    for (char c : row_str) row.push_back(c == '1');
-    address_t addr{};
-    addr.s_addr = htonl(INADDR_LOOPBACK);
-    pawn_t max_pawn = static_cast<pawn_t>(row.size() - 1);
-
-    pid_t pid = ::fork();
-    if (pid < 0) throw std::runtime_error("fork()");
-    if (pid == 0) {
-        int dn = ::open("/dev/null", O_WRONLY);
-        if (dn >= 0) { ::dup2(dn, 2); ::close(dn); }
-        try {
-            KaylesServer server(addr, port, timeout, max_pawn, std::move(row));
-            server.start();
-            server.run();
-        } catch (...) { ::_exit(1); }
-        ::_exit(0);
+    static uint16_t pick_ephemeral_port() {
+        int fd = ::socket(AF_INET, SOCK_DGRAM, 0);
+        sockaddr_in a{};
+        a.sin_family = AF_INET;
+        a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        a.sin_port = 0;
+        ::bind(fd, reinterpret_cast<sockaddr*>(&a), sizeof(a));
+        socklen_t l = sizeof(a);
+        ::getsockname(fd, reinterpret_cast<sockaddr*>(&a), &l);
+        ::close(fd);
+        return ntohs(a.sin_port);
     }
 
-    // Poll until server accepts a probe.
-    for (int i = 0; i < 80; ++i) {
-        int probe = ::socket(AF_INET, SOCK_DGRAM, 0);
-        timeval tv{0, 100000};
-        ::setsockopt(probe, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    static ServerHandle spawn_server(const std::string& row_str,
+                                     timeout_t timeout = std::chrono::seconds(60)) {
+        uint16_t port = pick_ephemeral_port();
+        pawn_row_t row;
+        for (char c : row_str)
+            row.push_back(c == '1');
+        address_t addr{};
+        addr.s_addr = htonl(INADDR_LOOPBACK);
+        pawn_t max_pawn = static_cast<pawn_t>(row.size() - 1);
+
+        pid_t pid = ::fork();
+        if (pid < 0)
+            throw std::runtime_error("fork()");
+        if (pid == 0) {
+            int dn = ::open("/dev/null", O_WRONLY);
+            if (dn >= 0) {
+                ::dup2(dn, 2);
+                ::close(dn);
+            }
+            try {
+                KaylesServer server(addr, port, timeout, max_pawn, std::move(row));
+                server.start();
+                server.run();
+            } catch (...) {
+                ::_exit(1);
+            }
+            ::_exit(0);
+        }
+
+        // Poll until server accepts a probe.
+        for (int i = 0; i < 80; ++i) {
+            int probe = ::socket(AF_INET, SOCK_DGRAM, 0);
+            timeval tv{0, 100000};
+            ::setsockopt(probe, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+            sockaddr_in target{};
+            target.sin_family = AF_INET;
+            target.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+            target.sin_port = htons(port);
+            uint8_t probe_byte = 0xFEu;
+            ::sendto(probe, &probe_byte, 1, 0, reinterpret_cast<sockaddr*>(&target),
+                     sizeof(target));
+            uint8_t buf[32];
+            ssize_t n = ::recvfrom(probe, buf, sizeof(buf), 0, nullptr, nullptr);
+            ::close(probe);
+            if (n > 0) {
+                ServerHandle h;
+                h.pid = pid;
+                h.port = port;
+                return h;
+            }
+            int status = 0;
+            if (::waitpid(pid, &status, WNOHANG) == pid) {
+                ADD_FAILURE() << "server child exited during spawn";
+                ServerHandle h;
+                h.pid = -1;
+                return h;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(30));
+        }
+        ::kill(pid, SIGKILL);
+        int st = 0;
+        ::waitpid(pid, &st, 0);
+        ADD_FAILURE() << "server did not come up on port " << port;
+        ServerHandle h;
+        return h;
+    }
+
+    // Send one datagram, receive one reply. Empty vector on timeout.
+    static std::vector<uint8_t> udp_exchange(
+        uint16_t port, std::span<const uint8_t> payload,
+        std::chrono::milliseconds timeout = std::chrono::milliseconds(600)) {
+        int fd = ::socket(AF_INET, SOCK_DGRAM, 0);
+        EXPECT_GE(fd, 0);
+        timeval tv{};
+        tv.tv_sec = timeout.count() / 1000;
+        tv.tv_usec = (timeout.count() % 1000) * 1000;
+        ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
         sockaddr_in target{};
         target.sin_family = AF_INET;
         target.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
         target.sin_port = htons(port);
-        uint8_t probe_byte = 0xFEu;
-        ::sendto(probe, &probe_byte, 1, 0, reinterpret_cast<sockaddr*>(&target),
+        ::sendto(fd, payload.data(), payload.size(), 0, reinterpret_cast<sockaddr*>(&target),
                  sizeof(target));
-        uint8_t buf[32];
-        ssize_t n = ::recvfrom(probe, buf, sizeof(buf), 0, nullptr, nullptr);
-        ::close(probe);
-        if (n > 0) {
-            ServerHandle h;
-            h.pid = pid;
-            h.port = port;
-            return h;
-        }
-        int status = 0;
-        if (::waitpid(pid, &status, WNOHANG) == pid) {
-            ADD_FAILURE() << "server child exited during spawn";
-            ServerHandle h;
-            h.pid = -1;
-            return h;
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(30));
+        std::vector<uint8_t> out(1024);
+        ssize_t n = ::recvfrom(fd, out.data(), out.size(), 0, nullptr, nullptr);
+        ::close(fd);
+        if (n < 0)
+            return {};
+        out.resize(static_cast<size_t>(n));
+        return out;
     }
-    ::kill(pid, SIGKILL);
-    int st = 0;
-    ::waitpid(pid, &st, 0);
-    ADD_FAILURE() << "server did not come up on port " << port;
-    ServerHandle h;
-    return h;
-}
 
-// Send one datagram, receive one reply. Empty vector on timeout.
-static std::vector<uint8_t>
-udp_exchange(uint16_t port, std::span<const uint8_t> payload,
-             std::chrono::milliseconds timeout = std::chrono::milliseconds(600)) {
-    int fd = ::socket(AF_INET, SOCK_DGRAM, 0);
-    EXPECT_GE(fd, 0);
-    timeval tv{};
-    tv.tv_sec = timeout.count() / 1000;
-    tv.tv_usec = (timeout.count() % 1000) * 1000;
-    ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-    sockaddr_in target{};
-    target.sin_family = AF_INET;
-    target.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    target.sin_port = htons(port);
-    ::sendto(fd, payload.data(), payload.size(), 0,
-             reinterpret_cast<sockaddr*>(&target), sizeof(target));
-    std::vector<uint8_t> out(1024);
-    ssize_t n = ::recvfrom(fd, out.data(), out.size(), 0, nullptr, nullptr);
-    ::close(fd);
-    if (n < 0) return {};
-    out.resize(static_cast<size_t>(n));
-    return out;
-}
+    static std::vector<uint8_t> wire_join(uint32_t pid) {
+        std::vector<uint8_t> v;
+        v.push_back(0);
+        uint32_t n = htonl(pid);
+        auto* p = reinterpret_cast<const uint8_t*>(&n);
+        v.insert(v.end(), p, p + 4);
+        return v;
+    }
 
-static std::vector<uint8_t> wire_join(uint32_t pid) {
-    std::vector<uint8_t> v;
-    v.push_back(0);
-    uint32_t n = htonl(pid);
-    auto* p = reinterpret_cast<const uint8_t*>(&n);
-    v.insert(v.end(), p, p + 4);
-    return v;
-}
+    static std::vector<uint8_t> wire_move(uint8_t mt, uint32_t pid, uint32_t gid, uint8_t pawn) {
+        std::vector<uint8_t> v;
+        v.push_back(mt);
+        uint32_t np = htonl(pid), ng = htonl(gid);
+        auto* p1 = reinterpret_cast<const uint8_t*>(&np);
+        v.insert(v.end(), p1, p1 + 4);
+        auto* p2 = reinterpret_cast<const uint8_t*>(&ng);
+        v.insert(v.end(), p2, p2 + 4);
+        v.push_back(pawn);
+        return v;
+    }
 
-static std::vector<uint8_t> wire_move(uint8_t mt, uint32_t pid, uint32_t gid,
-                                      uint8_t pawn) {
-    std::vector<uint8_t> v;
-    v.push_back(mt);
-    uint32_t np = htonl(pid), ng = htonl(gid);
-    auto* p1 = reinterpret_cast<const uint8_t*>(&np);
-    v.insert(v.end(), p1, p1 + 4);
-    auto* p2 = reinterpret_cast<const uint8_t*>(&ng);
-    v.insert(v.end(), p2, p2 + 4);
-    v.push_back(pawn);
-    return v;
-}
+    static std::vector<uint8_t> wire_ka_giveup(uint8_t mt, uint32_t pid, uint32_t gid) {
+        std::vector<uint8_t> v;
+        v.push_back(mt);
+        uint32_t np = htonl(pid), ng = htonl(gid);
+        auto* p1 = reinterpret_cast<const uint8_t*>(&np);
+        v.insert(v.end(), p1, p1 + 4);
+        auto* p2 = reinterpret_cast<const uint8_t*>(&ng);
+        v.insert(v.end(), p2, p2 + 4);
+        return v;
+    }
 
-static std::vector<uint8_t> wire_ka_giveup(uint8_t mt, uint32_t pid, uint32_t gid) {
-    std::vector<uint8_t> v;
-    v.push_back(mt);
-    uint32_t np = htonl(pid), ng = htonl(gid);
-    auto* p1 = reinterpret_cast<const uint8_t*>(&np);
-    v.insert(v.end(), p1, p1 + 4);
-    auto* p2 = reinterpret_cast<const uint8_t*>(&ng);
-    v.insert(v.end(), p2, p2 + 4);
-    return v;
-}
+    static bool is_wrong(const std::vector<uint8_t>& v) {
+        return v.size() == 14 && v[12] == MSG_WRONG_STATUS;
+    }
 
-static bool is_wrong(const std::vector<uint8_t>& v) {
-    return v.size() == 14 && v[12] == MSG_WRONG_STATUS;
-}
-
-static bool is_game_state(const std::vector<uint8_t>& v) {
-    return v.size() >= 15 && v[12] != MSG_WRONG_STATUS;
-}
+    static bool is_game_state(const std::vector<uint8_t>& v) {
+        return v.size() >= 15 && v[12] != MSG_WRONG_STATUS;
+    }
 
 }  // namespace
 
@@ -252,8 +262,10 @@ TEST(IntegrationDeeper, JoinWithPlayerIdZeroYieldsWrongMsg) {
     // error_index should point at start of player_id (byte 1).
     EXPECT_EQ(resp[13], 1u) << "error_index must be start of player_id field";
     // First 5 bytes echoed, 5..11 zero.
-    for (size_t i = 0; i < 5; ++i) EXPECT_EQ(resp[i], p[i]);
-    for (size_t i = 5; i < 12; ++i) EXPECT_EQ(resp[i], 0u);
+    for (size_t i = 0; i < 5; ++i)
+        EXPECT_EQ(resp[i], p[i]);
+    for (size_t i = 5; i < 12; ++i)
+        EXPECT_EQ(resp[i], 0u);
 }
 
 TEST(IntegrationDeeper, Move1WithPlayerIdZeroYieldsWrongMsg) {
@@ -298,7 +310,8 @@ TEST(IntegrationDeeper, KeepAliveUnknownGameIdGetsWrongMsgWithGameIdErrorIndex) 
     ASSERT_TRUE(is_wrong(resp));
     // error_index should be byte 5 (start of game_id).
     EXPECT_EQ(resp[13], 5u);
-    for (size_t i = 0; i < 9; ++i) EXPECT_EQ(resp[i], p[i]);
+    for (size_t i = 0; i < 9; ++i)
+        EXPECT_EQ(resp[i], p[i]);
 }
 
 TEST(IntegrationDeeper, GiveUpUnknownGameIdByMemberOfOtherGameGetsWrongMsg) {
@@ -431,13 +444,14 @@ TEST(IntegrationDeeper, EveryPawnKnockAffectsOnlyItsBit) {
         for (int i = 0; i <= 15; ++i) {
             bool expected = (i != k);
             ASSERT_EQ(p->pawn_row[i], expected)
-                << "after knock of " << k << ", pin " << i
-                << " must be " << expected;
+                << "after knock of " << k << ", pin " << i << " must be " << expected;
         }
         // Byte-exact check.
         uint8_t expected_byte0 = 0xFFu, expected_byte1 = 0xFFu;
-        if (k < 8) expected_byte0 &= static_cast<uint8_t>(~(1u << (7 - k)));
-        else       expected_byte1 &= static_cast<uint8_t>(~(1u << (7 - (k - 8))));
+        if (k < 8)
+            expected_byte0 &= static_cast<uint8_t>(~(1u << (7 - k)));
+        else
+            expected_byte1 &= static_cast<uint8_t>(~(1u << (7 - (k - 8))));
         EXPECT_EQ(resp[14], expected_byte0) << "k=" << k;
         EXPECT_EQ(resp[15], expected_byte1) << "k=" << k;
     }
@@ -515,7 +529,8 @@ TEST(IntegrationDeeper, MoveByAOnBTurnReturnsGameStateUnchanged) {
     ASSERT_TRUE(p.has_value());
     EXPECT_EQ(p->status, GameStatus::TURN_B);
     // Row must be unchanged (all pins up).
-    for (int i = 0; i <= 3; ++i) EXPECT_TRUE(p->pawn_row[i]);
+    for (int i = 0; i <= 3; ++i)
+        EXPECT_TRUE(p->pawn_row[i]);
 }
 
 // ===========================================================================
@@ -542,13 +557,13 @@ TEST(IntegrationDeeper, WrongMsgEchoesClientBytesVerbatim12Bytes) {
     auto srv = spawn_server("111");
     // Send a full 12-byte datagram with distinct bytes.
     std::vector<uint8_t> p(12, 0);
-    for (size_t i = 0; i < 12; ++i) p[i] = static_cast<uint8_t>(0x10u + i);
+    for (size_t i = 0; i < 12; ++i)
+        p[i] = static_cast<uint8_t>(0x10u + i);
     // msg_type = 0x10 is invalid → error_index 0.
     auto resp = udp_exchange(srv.port, p);
     ASSERT_TRUE(is_wrong(resp));
     for (size_t i = 0; i < 12; ++i) {
-        EXPECT_EQ(resp[i], static_cast<uint8_t>(0x10u + i))
-            << "echo byte " << i;
+        EXPECT_EQ(resp[i], static_cast<uint8_t>(0x10u + i)) << "echo byte " << i;
     }
     EXPECT_EQ(resp[12], MSG_WRONG_STATUS);
     EXPECT_EQ(resp[13], 0u);
@@ -566,7 +581,8 @@ TEST(IntegrationDeeper, BitmapPin255KnockZeroLastBitOfLastByte) {
     auto resp = udp_exchange(srv.port, wire_move(1, 2, 0, 255));  // knock 255
     ASSERT_EQ(resp.size(), 14u + 32u);
     // Byte 14..44 all 0xFF except last: bit 0 (LSB) of byte 45 cleared.
-    for (size_t i = 14; i < 14 + 31; ++i) EXPECT_EQ(resp[i], 0xFFu);
+    for (size_t i = 14; i < 14 + 31; ++i)
+        EXPECT_EQ(resp[i], 0xFFu);
     EXPECT_EQ(resp[14 + 31], 0xFEu) << "last bit of last byte is pin 255";
 }
 
@@ -583,21 +599,30 @@ TEST(IntegrationDeeper, WaitingInvariantAcrossFiveJoins) {
     auto r3 = udp_exchange(srv.port, wire_join(3));
     auto r4 = udp_exchange(srv.port, wire_join(4));
     auto r5 = udp_exchange(srv.port, wire_join(5));
-    for (auto& r : {std::ref(r1), std::ref(r2), std::ref(r3), std::ref(r4),
-                    std::ref(r5)}) {
+    for (auto& r : {std::ref(r1), std::ref(r2), std::ref(r3), std::ref(r4), std::ref(r5)}) {
         ASSERT_TRUE(is_game_state(r.get()));
     }
-    auto p1 = deserialize_game_state(r1); ASSERT_TRUE(p1.has_value());
-    auto p2 = deserialize_game_state(r2); ASSERT_TRUE(p2.has_value());
-    auto p3 = deserialize_game_state(r3); ASSERT_TRUE(p3.has_value());
-    auto p4 = deserialize_game_state(r4); ASSERT_TRUE(p4.has_value());
-    auto p5 = deserialize_game_state(r5); ASSERT_TRUE(p5.has_value());
+    auto p1 = deserialize_game_state(r1);
+    ASSERT_TRUE(p1.has_value());
+    auto p2 = deserialize_game_state(r2);
+    ASSERT_TRUE(p2.has_value());
+    auto p3 = deserialize_game_state(r3);
+    ASSERT_TRUE(p3.has_value());
+    auto p4 = deserialize_game_state(r4);
+    ASSERT_TRUE(p4.has_value());
+    auto p5 = deserialize_game_state(r5);
+    ASSERT_TRUE(p5.has_value());
 
-    EXPECT_EQ(p1->game_id, 0u); EXPECT_EQ(p1->status, GameStatus::WAITING_FOR_OPPONENT);
-    EXPECT_EQ(p2->game_id, 0u); EXPECT_EQ(p2->status, GameStatus::TURN_B);
-    EXPECT_EQ(p3->game_id, 1u); EXPECT_EQ(p3->status, GameStatus::WAITING_FOR_OPPONENT);
-    EXPECT_EQ(p4->game_id, 1u); EXPECT_EQ(p4->status, GameStatus::TURN_B);
-    EXPECT_EQ(p5->game_id, 2u); EXPECT_EQ(p5->status, GameStatus::WAITING_FOR_OPPONENT);
+    EXPECT_EQ(p1->game_id, 0u);
+    EXPECT_EQ(p1->status, GameStatus::WAITING_FOR_OPPONENT);
+    EXPECT_EQ(p2->game_id, 0u);
+    EXPECT_EQ(p2->status, GameStatus::TURN_B);
+    EXPECT_EQ(p3->game_id, 1u);
+    EXPECT_EQ(p3->status, GameStatus::WAITING_FOR_OPPONENT);
+    EXPECT_EQ(p4->game_id, 1u);
+    EXPECT_EQ(p4->status, GameStatus::TURN_B);
+    EXPECT_EQ(p5->game_id, 2u);
+    EXPECT_EQ(p5->status, GameStatus::WAITING_FOR_OPPONENT);
 }
 
 // ===========================================================================
