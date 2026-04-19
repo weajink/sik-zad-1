@@ -32,7 +32,8 @@ namespace kayles::protocol {
     constexpr size_t ERROR_INDEX_SIZE = 1;
     constexpr size_t CLIENT_MESSAGE_SIZE =
         MSG_TYPE_SIZE + PLAYER_ID_SIZE + GAME_ID_SIZE + PAWN_SIZE;
-    constexpr size_t CLIENT_MESSAGE_SIZE_WITH_BUF = CLIENT_MESSAGE_SIZE + 2;  // for wrong message, we may need to read up to 2 extra bytes
+    constexpr size_t CLIENT_MESSAGE_SIZE_WITH_BUF =
+        CLIENT_MESSAGE_SIZE + 2;  // for wrong message, we may need to read up to 2 extra bytes
     constexpr size_t MAX_VALID_CLIENT_MESSAGE = 4;
     constexpr uint8_t MSG_WRONG_STATUS = 255;
 
@@ -96,14 +97,14 @@ namespace kayles::protocol {
     }
 
     inline void append_bitmap(std::vector<uint8_t> &v, const pawn_row_t &row, pawn_t max_pawn) {
-        size_t bitmap_size = max_pawn / 8 + 1;                                                                 
-        size_t start = v.size();                                                                               
-        v.resize(start + bitmap_size, 0);  // zero-initialize → excess bits are 0                              
-        for (size_t i = 0; i <= max_pawn; ++i) {                                                               
-            if (row[i]) {                                                                                      
+        size_t bitmap_size = max_pawn / 8 + 1;
+        size_t start = v.size();
+        v.resize(start + bitmap_size, 0);  // zero-initialize → excess bits are 0
+        for (size_t i = 0; i <= max_pawn; ++i) {
+            if (row[i]) {
                 v[start + i / 8] |= static_cast<uint8_t>(1u << (7 - (i % 8)));
-            }                                                                                                  
-        }                                                                                                      
+            }
+        }
     }
 
     inline uint8_t read_u8(std::span<const uint8_t> &bytes) {
@@ -169,8 +170,8 @@ namespace kayles::protocol {
         return res;
     }
 
-    inline std::expected<ClientMessage, KaylesError>
-    deserialize_client_message(std::span<const uint8_t> bytes) {
+    inline std::expected<ClientMessage, KaylesError> deserialize_client_message(
+        std::span<const uint8_t> bytes) {
         ClientMessage res{};
         if (bytes.empty()) {
             return std::unexpected(KaylesError::invalid_length(0));
@@ -215,8 +216,8 @@ namespace kayles::protocol {
     inline constexpr size_t GAME_STATE_HEADER_SIZE =
         GAME_ID_SIZE + 2 * PLAYER_ID_SIZE + STATUS_SIZE + PAWN_SIZE;
 
-    inline std::expected<GameState, KaylesError>
-    deserialize_game_state(std::span<const uint8_t> bytes) {
+    inline std::expected<GameState, KaylesError> deserialize_game_state(
+        std::span<const uint8_t> bytes) {
         if (bytes.size() < GAME_STATE_HEADER_SIZE) {
             return std::unexpected(KaylesError::invalid_length(bytes.size()));
         }
@@ -243,8 +244,8 @@ namespace kayles::protocol {
         return res;
     }
 
-    inline std::expected<MessageWrong, KaylesError>
-    deserialize_message_wrong(std::span<const uint8_t> bytes) {
+    inline std::expected<MessageWrong, KaylesError> deserialize_message_wrong(
+        std::span<const uint8_t> bytes) {
         if (bytes.size() != CLIENT_MESSAGE_SIZE_WITH_BUF + STATUS_SIZE + ERROR_INDEX_SIZE) {
             return std::unexpected(KaylesError::invalid_length(bytes.size()));
         }
@@ -256,18 +257,20 @@ namespace kayles::protocol {
     }
 
     // Discriminates on the status byte at offset 12 and delegates to the right deserializer.
-    inline std::expected<ServerMessage, KaylesError>
-    deserialize_server_message(std::span<const uint8_t> bytes) {
+    inline std::expected<ServerMessage, KaylesError> deserialize_server_message(
+        std::span<const uint8_t> bytes) {
         if (bytes.size() <= SERVER_MESSAGE_STATUS_OFFSET) {
             return std::unexpected(KaylesError::invalid_length(bytes.size()));
         }
         if (bytes[SERVER_MESSAGE_STATUS_OFFSET] == MSG_WRONG_STATUS) {
             auto w = deserialize_message_wrong(bytes);
-            if (!w) return std::unexpected(w.error());
+            if (!w)
+                return std::unexpected(w.error());
             return ServerMessage{*w};
         }
         auto s = deserialize_game_state(bytes);
-        if (!s) return std::unexpected(s.error());
+        if (!s)
+            return std::unexpected(s.error());
         return ServerMessage{*s};
     }
 
@@ -277,22 +280,32 @@ namespace kayles::protocol {
 
     inline std::ostream &operator<<(std::ostream &os, ClientMessageType t) {
         switch (t) {
-            case ClientMessageType::MSG_JOIN:       return os << "MSG_JOIN";
-            case ClientMessageType::MSG_MOVE_1:     return os << "MSG_MOVE_1";
-            case ClientMessageType::MSG_MOVE_2:     return os << "MSG_MOVE_2";
-            case ClientMessageType::MSG_KEEP_ALIVE: return os << "MSG_KEEP_ALIVE";
-            case ClientMessageType::MSG_GIVE_UP:    return os << "MSG_GIVE_UP";
+            case ClientMessageType::MSG_JOIN:
+                return os << "MSG_JOIN";
+            case ClientMessageType::MSG_MOVE_1:
+                return os << "MSG_MOVE_1";
+            case ClientMessageType::MSG_MOVE_2:
+                return os << "MSG_MOVE_2";
+            case ClientMessageType::MSG_KEEP_ALIVE:
+                return os << "MSG_KEEP_ALIVE";
+            case ClientMessageType::MSG_GIVE_UP:
+                return os << "MSG_GIVE_UP";
         }
         std::unreachable();
     }
 
     inline std::ostream &operator<<(std::ostream &os, GameStatus s) {
         switch (s) {
-            case GameStatus::WAITING_FOR_OPPONENT: return os << "WAITING_FOR_OPPONENT";
-            case GameStatus::TURN_A:               return os << "TURN_A";
-            case GameStatus::TURN_B:               return os << "TURN_B";
-            case GameStatus::WIN_A:                return os << "WIN_A";
-            case GameStatus::WIN_B:                return os << "WIN_B";
+            case GameStatus::WAITING_FOR_OPPONENT:
+                return os << "WAITING_FOR_OPPONENT";
+            case GameStatus::TURN_A:
+                return os << "TURN_A";
+            case GameStatus::TURN_B:
+                return os << "TURN_B";
+            case GameStatus::WIN_A:
+                return os << "WIN_A";
+            case GameStatus::WIN_B:
+                return os << "WIN_B";
         }
         std::unreachable();
     }
@@ -308,21 +321,18 @@ namespace kayles::protocol {
                 break;
             case ClientMessageType::MSG_MOVE_1:
             case ClientMessageType::MSG_MOVE_2:
-                os << " game_id=" << m.game_id
-                   << " pawn=" << static_cast<unsigned>(m.pawn);
+                os << " game_id=" << m.game_id << " pawn=" << static_cast<unsigned>(m.pawn);
                 break;
         }
         return os;
     }
 
     inline std::ostream &operator<<(std::ostream &os, const GameState &s) {
-        os << "GameState{game_id=" << s.game_id
-           << " player_a=" << s.player_a_id
-           << " player_b=" << s.player_b_id
-           << " status=" << s.status
-           << " max_pawn=" << static_cast<unsigned>(s.max_pawn)
-           << " pawn_row=";
-        for (bool p : s.pawn_row) os << (p ? '1' : '0');
+        os << "GameState{game_id=" << s.game_id << " player_a=" << s.player_a_id
+           << " player_b=" << s.player_b_id << " status=" << s.status
+           << " max_pawn=" << static_cast<unsigned>(s.max_pawn) << " pawn_row=";
+        for (bool p : s.pawn_row)
+            os << (p ? '1' : '0');
         return os << '}';
     }
 
@@ -331,7 +341,8 @@ namespace kayles::protocol {
         os << std::hex;
         for (size_t i = 0; i < CLIENT_MESSAGE_SIZE_WITH_BUF; ++i) {
             os << static_cast<unsigned>(w.client_bytes[i]);
-            if (i + 1 < CLIENT_MESSAGE_SIZE_WITH_BUF) os << ' ';
+            if (i + 1 < CLIENT_MESSAGE_SIZE_WITH_BUF)
+                os << ' ';
         }
         os << std::dec;
         return os << " status=" << static_cast<unsigned>(w.status)

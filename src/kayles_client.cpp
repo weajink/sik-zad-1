@@ -63,8 +63,7 @@ int main(int argc, char *argv[]) {
             }
         }
     }
-    if (!opt_address || !opt_port || !opt_message || !opt_timeout
-        || optind < argc) {
+    if (!opt_address || !opt_port || !opt_message || !opt_timeout || optind < argc) {
         std::cerr << USAGE_STR;
         return 1;
     }
@@ -74,7 +73,7 @@ int main(int argc, char *argv[]) {
     ClientMessage message = opt_message.value();
     timeout_t client_timeout = opt_timeout.value();
 
-    struct sockaddr_in server_addr{};
+    struct sockaddr_in server_addr {};
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr = address;
     server_addr.sin_port = htons(port);
@@ -109,7 +108,7 @@ int main(int argc, char *argv[]) {
     }
 
     char buffer[1024];
-    struct sockaddr_in from_addr{};
+    struct sockaddr_in from_addr {};
     socklen_t from_len = sizeof(from_addr);
     ssize_t recv_bytes =
         recvfrom(sock_fd, buffer, sizeof(buffer), 0, (struct sockaddr *)&from_addr, &from_len);

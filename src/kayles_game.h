@@ -1,21 +1,21 @@
 #ifndef KAYLES_GAME_H
 #define KAYLES_GAME_H
 
-#include "kayles_protocol.h"
-#include "kayles_clock.h"
-
 #include <algorithm>
 #include <cassert>
+#include <chrono>
 #include <cstring>
 #include <ctime>
 #include <expected>
 #include <limits>
 #include <map>
+#include <memory>
 #include <stdexcept>
 #include <utility>
 #include <vector>
-#include <chrono>
-#include <memory>
+
+#include "kayles_clock.h"
+#include "kayles_protocol.h"
 
 namespace kayles::game {
     using namespace kayles::protocol;
@@ -23,7 +23,7 @@ namespace kayles::game {
     class KaylesGame {
        private:
         GameState gs;
-        
+
         std::shared_ptr<kayles::clock::Clock> clock;
         time_point_t player_a_last_move_time;
         time_point_t player_b_last_move_time;
@@ -44,7 +44,8 @@ namespace kayles::game {
         }
 
         bool take_two_consecutive_pawns(size_t first_pawn) {
-            if (first_pawn + 1 > gs.max_pawn || !gs.pawn_row[first_pawn] || !gs.pawn_row[first_pawn + 1]) {
+            if (first_pawn + 1 > gs.max_pawn || !gs.pawn_row[first_pawn] ||
+                !gs.pawn_row[first_pawn + 1]) {
                 return false;
             }
             gs.pawn_row[first_pawn] = gs.pawn_row[first_pawn + 1] = false;
@@ -53,8 +54,8 @@ namespace kayles::game {
         }
 
        public:
-        KaylesGame(player_id_t game_id, player_id_t player_a_id, pawn_t max_pawn, pawn_row_t pawn_row,
-                  std::shared_ptr<kayles::clock::Clock> clock)
+        KaylesGame(player_id_t game_id, player_id_t player_a_id, pawn_t max_pawn,
+                   pawn_row_t pawn_row, std::shared_ptr<kayles::clock::Clock> clock)
             : gs{.game_id = game_id,
                  .player_a_id = player_a_id,
                  .player_b_id = 0,
@@ -63,7 +64,6 @@ namespace kayles::game {
                  .pawn_row = std::move(pawn_row)},
               clock(clock),
               player_a_last_move_time(clock->now()) {
-            
             assert(player_a_id != 0);
             pawns_left_in_row = std::count(gs.pawn_row.begin(), gs.pawn_row.end(), true);
         }
@@ -82,7 +82,7 @@ namespace kayles::game {
             assert(player_b_id != 0);
             assert(gs.status == GameStatus::WAITING_FOR_OPPONENT);
             assert(this->gs.player_b_id == 0);
-            
+
             this->gs.player_b_id = player_b_id;
             keep_alive(player_b_id);
             gs.status = GameStatus::TURN_B;
@@ -163,7 +163,7 @@ namespace kayles::game {
                 case GameStatus::WIN_A:
                 case GameStatus::WIN_B: {
                     return (now - player_a_last_move_time > server_timeout) &&
-                        (now - player_b_last_move_time > server_timeout);
+                           (now - player_b_last_move_time > server_timeout);
                 }
                 default: {
                     return false;
@@ -171,7 +171,7 @@ namespace kayles::game {
             }
         }
 
-        const GameState& get_game_state() {
+        const GameState &get_game_state() {
             return gs;
         }
 
@@ -203,15 +203,16 @@ namespace kayles::game {
 
        public:
         KaylesGameMap(timeout_t timeout, pawn_t max_pawn, pawn_row_t pawn_row)
-            : timeout(timeout), max_pawn(max_pawn), pawn_row(pawn_row),
-            clock(std::make_shared<kayles::clock::SystemClock>()) {}
-        
+            : timeout(timeout),
+              max_pawn(max_pawn),
+              pawn_row(pawn_row),
+              clock(std::make_shared<kayles::clock::SystemClock>()) {}
+
         KaylesGameMap(timeout_t timeout, pawn_t max_pawn, pawn_row_t pawn_row,
                       std::shared_ptr<kayles::clock::Clock> clock)
             : timeout(timeout), max_pawn(max_pawn), pawn_row(pawn_row), clock(std::move(clock)) {}
 
-        std::expected<GameState, KaylesError>
-        join(player_id_t player_id) {
+        std::expected<GameState, KaylesError> join(player_id_t player_id) {
             check_timeouts_and_remove_stale();
 
             // check if the last game is waiting for opponent
@@ -234,9 +235,8 @@ namespace kayles::game {
             return it->second.get_game_state();
         }
 
-        std::expected<GameState, KaylesError>
-        move(player_id_t player_id, game_id_t game_id,
-            size_t pawn, size_t no_of_pawns) {
+        std::expected<GameState, KaylesError> move(player_id_t player_id, game_id_t game_id,
+                                                   size_t pawn, size_t no_of_pawns) {
             check_timeouts_and_remove_stale();
 
             auto it = games.find(game_id);
@@ -252,8 +252,7 @@ namespace kayles::game {
             return game.get_game_state();
         }
 
-        std::expected<GameState, KaylesError> 
-        keep_alive(player_id_t player_id, game_id_t game_id) {
+        std::expected<GameState, KaylesError> keep_alive(player_id_t player_id, game_id_t game_id) {
             check_timeouts_and_remove_stale();
 
             auto it = games.find(game_id);
@@ -269,8 +268,7 @@ namespace kayles::game {
             return game.get_game_state();
         }
 
-        std::expected<GameState, KaylesError> 
-        give_up(player_id_t player_id, game_id_t game_id) {
+        std::expected<GameState, KaylesError> give_up(player_id_t player_id, game_id_t game_id) {
             check_timeouts_and_remove_stale();
 
             auto it = games.find(game_id);

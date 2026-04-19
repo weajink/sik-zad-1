@@ -1,12 +1,14 @@
+#include "kayles_server.h"
+
 #include <arpa/inet.h>
 #include <getopt.h>
-#include "kayles_parse.h"
-#include "kayles_server.h"
 
 #include <cstring>
 #include <iostream>
 #include <optional>
 #include <string>
+
+#include "kayles_parse.h"
 
 using namespace kayles::server;
 using namespace kayles::parse;
@@ -25,13 +27,13 @@ int main(int argc, char *argv[]) {
     while ((opt = getopt(argc, argv, "r:a:p:t:")) != -1) {
         switch (opt) {
             case 'r': {
-               if (!assign_or_report(opt_row, parse_pawn_row(optarg))) {
+                if (!assign_or_report(opt_row, parse_pawn_row(optarg))) {
                     return 1;
                 }
                 break;
             }
             case 'a': {
-               if (!assign_or_report(opt_address, parse_address(optarg))) {
+                if (!assign_or_report(opt_address, parse_address(optarg))) {
                     return 1;
                 }
                 break;
@@ -54,14 +56,14 @@ int main(int argc, char *argv[]) {
             }
         }
     }
-    if (!opt_row || !opt_port || !opt_address || !opt_timeout
-        || optind < argc) {
+    if (!opt_row || !opt_port || !opt_address || !opt_timeout || optind < argc) {
         std::cerr << USAGE_STR;
         return 1;
     }
 
     uint8_t max_pawn = opt_row.value().size() - 1;
-    KaylesServer server(opt_address.value(), opt_port.value(), opt_timeout.value(), max_pawn, opt_row.value());
+    KaylesServer server(opt_address.value(), opt_port.value(), opt_timeout.value(), max_pawn,
+                        opt_row.value());
     try {
         server.start();
         server.run();

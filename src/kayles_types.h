@@ -19,6 +19,6 @@ namespace kayles::types {
 
     static constexpr timeout_t MIN_TIMEOUT = std::chrono::seconds(1);
     static constexpr timeout_t MAX_TIMEOUT = std::chrono::seconds(99);
-} // namespace kayles::types
+}  // namespace kayles::types
 
 #endif

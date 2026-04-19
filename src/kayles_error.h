@@ -5,7 +5,7 @@
 #include <string>
 
 namespace kayles::error {
-    enum class ErrorType {
+    enum class ErrorType : uint8_t {
         INVALID_MESSAGE_LENGTH,
         INVALID_MESSAGE_ARGUMENT,
         EXHAUSTED_GAME_IDS,
@@ -15,7 +15,7 @@ namespace kayles::error {
     };
 
     class KaylesError {
-      private:
+       private:
         ErrorType type_;
         std::string what_;
         size_t error_index_;
@@ -23,7 +23,7 @@ namespace kayles::error {
         KaylesError(ErrorType type, std::string what, size_t error_index)
             : type_(type), what_(std::move(what)), error_index_(error_index) {}
 
-      public:
+       public:
         ErrorType type() const {
             return type_;
         }
