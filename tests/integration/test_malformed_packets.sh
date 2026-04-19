@@ -143,23 +143,26 @@ assert_wrong_msg "$RESP" 5 "truncated GIVE_UP len=5"
 echo "Test 8: oversized MSG_JOIN (6 bytes: type+player+1 extra) ⇒ WRONG_MSG"
 # Send 6 bytes: type=0 + 4-byte player_id + 1 trailing garbage.
 RESP=$(raw_udp "$PORT" "0000000001ff")
-# invalid_length with bytes.size()+1 = 6. Expected size for JOIN is 5. So 6 ≠ 5 ⇒ invalid_length(6).
-assert_wrong_msg "$RESP" 6 "oversized JOIN len=6"
+# Expected size for JOIN is 5; received 6. First unparseable byte is at
+# index 5 (the trailing garbage) ⇒ error_index = min(5, 6) = 5.
+assert_wrong_msg "$RESP" 5 "oversized JOIN len=6"
 
 echo "Test 9: oversized MSG_MOVE_1 (11 bytes instead of 10) ⇒ WRONG_MSG"
 # MOVE_1 format = 10 bytes. Server buffer is 12, so it can read 11.
 # bytes: 01 00000001 00000000 00 + 1 trailing = 11 bytes.
 RESP=$(raw_udp "$PORT" "0100000001000000000000")
-# After reading type (1 byte), remaining = 10. Total = 11. expected=10. ⇒ invalid_length(11).
-assert_wrong_msg "$RESP" 11 "oversized MOVE_1 len=11"
+# Expected=10, received=11. First unparseable byte is at index 10 ⇒
+# error_index = min(10, 11) = 10.
+assert_wrong_msg "$RESP" 10 "oversized MOVE_1 len=11"
 
 echo "Test 10: very oversized datagram (30 bytes) — server reads only buffer size"
 # Server's recvfrom buffer is CLIENT_MESSAGE_SIZE_WITH_BUF = 12 bytes.
 # A 30-byte datagram's first 12 bytes are read. Type byte = 0 (JOIN).
-# Server sees 12 bytes, expects 5 for JOIN ⇒ invalid_length(12).
+# Server sees 12 bytes, expects 5 for JOIN. First unparseable byte is at
+# index 5 ⇒ error_index = min(5, 12) = 5.
 BIG=$(printf '00%.0s' {1..30})
 RESP=$(raw_udp "$PORT" "$BIG")
-assert_wrong_msg "$RESP" 12 "oversized 30-byte datagram"
+assert_wrong_msg "$RESP" 5 "oversized 30-byte datagram"
 
 # -------------------------------------------------------------------------
 # 4. Empty datagram.

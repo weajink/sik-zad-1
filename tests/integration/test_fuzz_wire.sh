@@ -133,7 +133,9 @@ for i in range(N_RANDOM):
 
 # ---------------------------------------------------------------------------
 # 1b. Valid msg_type but random remaining bytes of random length.
-#     Length-mismatch → error_index == actual length visible to the server.
+#     Length-mismatch → error_index == min(expected_size, actual length).
+#       - Too short: first missing byte is at index L (received length).
+#       - Too long:  first unparseable byte is at index EXPECTED_SIZE[t].
 #     Length-match but type==JOIN with player=0 → error_index == 1
 #       (MSG_TYPE_SIZE; KaylesError::player_id_zero).
 # ---------------------------------------------------------------------------
@@ -151,8 +153,9 @@ for i in range(500):
         continue
 
     if L != EXPECTED_SIZE[t]:
-        # Length mismatch dominates → error_index == L.
-        check_wrong_msg(resp, f"typed[{i}] t={t} L={L}", data, expected_idx=L)
+        expected_idx = min(L, EXPECTED_SIZE[t])
+        check_wrong_msg(resp, f"typed[{i}] t={t} L={L}", data,
+                        expected_idx=expected_idx)
     else:
         # Length matches expected. Now player_id might be zero or nonzero,
         # game_id may be unknown, etc. If player_id is zero for any type,

@@ -12,6 +12,7 @@
 #include <utility>
 #include <variant>
 #include <vector>
+#include <algorithm>
 
 #include "kayles_error.h"
 #include "kayles_types.h"
@@ -182,8 +183,9 @@ namespace kayles::protocol {
         }
         res.msg_type = static_cast<ClientMessageType>(msg_type);
         size_t size = get_client_message_size(res.msg_type);
+        size_t received = bytes.size() + MSG_TYPE_SIZE;
         if (size != bytes.size() + MSG_TYPE_SIZE) {  // we already consumed one byte
-            return std::unexpected(KaylesError::invalid_length(bytes.size() + MSG_TYPE_SIZE));
+            return std::unexpected(KaylesError::invalid_length(std::min(size, received)));
         }
         res.player_id = read_u32(bytes);
         if (res.player_id == 0) {
