@@ -182,6 +182,7 @@ namespace kayles::game {
 
     class KaylesGameMap {
        private:
+        bool exhausted = false;
         game_id_t next_game_id = 0;
         std::map<game_id_t, KaylesGame> games;
 
@@ -223,15 +224,23 @@ namespace kayles::game {
                 return game.get_game_state();
             }
 
-            // All games in use
-            if (next_game_id == std::numeric_limits<game_id_t>::max()) {
+            // Already exhausted all game ids
+            if (exhausted) {
                 return std::unexpected(KaylesError::game_ids_exhausted());
             }
 
             // Find an unused game_id.
-            game_id_t game_id = next_game_id++;
+            game_id_t game_id = next_game_id;
             auto [it, _] =
                 games.emplace(game_id, KaylesGame(game_id, player_id, max_pawn, pawn_row, clock));
+
+            // Last possible game id is now taken, mark as exhausted.
+            if (next_game_id == std::numeric_limits<game_id_t>::max()) {
+                exhausted = true;
+            } else {
+                next_game_id++;
+            }
+
             return it->second.get_game_state();
         }
 

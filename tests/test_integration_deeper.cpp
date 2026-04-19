@@ -318,8 +318,9 @@ TEST(IntegrationDeeper, Move1ByNonMemberOfExistingGameGetsWrongMsg) {
     auto p = wire_move(1, /*pid=*/99, /*gid=*/0, 0);
     auto resp = udp_exchange(srv.port, p);
     ASSERT_TRUE(is_wrong(resp));
-    // error_index should be byte 1 (start of player_id).
-    EXPECT_EQ(resp[13], 1u);
+    // Updated spec: nonzero player_id is never invalid — player-in-game
+    // mismatch is attributed to the game_id field (byte 5).
+    EXPECT_EQ(resp[13], 5u);
 }
 
 // ===========================================================================

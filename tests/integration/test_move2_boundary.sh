@@ -125,12 +125,17 @@ assert_stdout_contains "status=TURN_B"
 run_client "$PORT" "2/20/$GAME_ID/254"
 # Turn should be TURN_A now (not WIN because 254 other pins remain).
 assert_stdout_contains "status=TURN_A"
-# Last two bits of the 256-bit bitmap should now be 0. The pawn_row string
-# ends with "...0000000011111100" — the last two chars should be "00".
-# (Can't easily grep for the exact full row; check a suffix.)
-if ! echo "$CLIENT_STDOUT" | grep -qE "pawn_row=[01]{254}00"; then
-    echo "  FAIL: pawn_row should end with '00' after knocking 254,255"
-    echo "  STDOUT: $CLIENT_STDOUT"
+# Extract the pawn_row field and check it's exactly 254 ones followed by "00".
+ROW=$(echo "$CLIENT_STDOUT" | grep -oE 'pawn_row=[01]+' | head -1 | cut -d= -f2)
+if [[ ${#ROW} -ne 256 ]]; then
+    echo "  FAIL: pawn_row length should be 256, got ${#ROW}"
+    exit 1
+fi
+# Positions 254, 255 (0-indexed) must be '0'; everything before must be '1'.
+EXPECTED=$(printf '1%.0s' {1..254})"00"
+if [[ "$ROW" != "$EXPECTED" ]]; then
+    echo "  FAIL: pawn_row should be 254 ones then '00'"
+    echo "  got: $ROW"
     exit 1
 fi
 

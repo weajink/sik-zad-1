@@ -186,6 +186,9 @@ namespace kayles::protocol {
             return std::unexpected(KaylesError::invalid_length(bytes.size() + MSG_TYPE_SIZE));
         }
         res.player_id = read_u32(bytes);
+        if (res.player_id == 0) {
+            return std::unexpected(KaylesError::player_id_zero());
+        }
         switch (res.msg_type) {
             case ClientMessageType::MSG_GIVE_UP:
             case ClientMessageType::MSG_KEEP_ALIVE:
@@ -357,7 +360,11 @@ namespace kayles::error {
                 kayles::protocol::MSG_TYPE_SIZE + kayles::protocol::PLAYER_ID_SIZE};
     }
     inline KaylesError KaylesError::invalid_player_id() {
-        return {ErrorType::INVALID_PLAYER_ID, "Invalid player ID.",
+        return {ErrorType::INVALID_PLAYER_ID, "Player not in the provided game.",
+                kayles::protocol::MSG_TYPE_SIZE + kayles::protocol::PLAYER_ID_SIZE};
+    }
+    inline KaylesError KaylesError::player_id_zero() {
+        return {ErrorType::INVALID_PLAYER_ID, "Player ID cannot be zero.",
                 kayles::protocol::MSG_TYPE_SIZE};
     }
 }  // namespace kayles::error

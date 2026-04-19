@@ -47,6 +47,36 @@ target_include_directories(test_integration PRIVATE ${PROJECT_SOURCE_DIR}/src)
 add_test(NAME test_integration COMMAND test_integration)
 set_tests_properties(test_integration PROPERTIES TIMEOUT 120)
 
+# --- Brutal, spec-driven tests added to fill coverage gaps ---
+
+add_executable(test_protocol_deeper test_protocol_deeper.cpp)
+target_link_libraries(test_protocol_deeper PRIVATE GTest::gtest_main)
+target_include_directories(test_protocol_deeper PRIVATE ${PROJECT_SOURCE_DIR}/src)
+add_test(NAME test_protocol_deeper COMMAND test_protocol_deeper)
+
+add_executable(test_game_deeper test_game_deeper.cpp)
+target_link_libraries(test_game_deeper PRIVATE GTest::gtest_main)
+target_include_directories(test_game_deeper PRIVATE ${PROJECT_SOURCE_DIR}/src)
+add_test(NAME test_game_deeper COMMAND test_game_deeper)
+
+add_executable(test_integration_deeper test_integration_deeper.cpp)
+target_link_libraries(test_integration_deeper PRIVATE GTest::gtest_main)
+target_include_directories(test_integration_deeper PRIVATE ${PROJECT_SOURCE_DIR}/src)
+add_test(NAME test_integration_deeper COMMAND test_integration_deeper)
+set_tests_properties(test_integration_deeper PROPERTIES TIMEOUT 180)
+
+add_executable(test_cli test_cli.cpp)
+target_link_libraries(test_cli PRIVATE GTest::gtest_main)
+target_include_directories(test_cli PRIVATE ${PROJECT_SOURCE_DIR}/src)
+# Tell the CLI tests where the binaries live. We use CMake's target-file
+# generator expression so the paths point at the actual built binaries.
+target_compile_definitions(test_cli PRIVATE
+    KAYLES_SERVER_BIN="$<TARGET_FILE:kayles_server>"
+    KAYLES_CLIENT_BIN="$<TARGET_FILE:kayles_client>")
+add_dependencies(test_cli kayles_server kayles_client)
+add_test(NAME test_cli COMMAND test_cli)
+set_tests_properties(test_cli PROPERTIES TIMEOUT 180)
+
 # -----------------------------------------------------------------------------
 # Shell-based integration tests under tests/integration/test_*.sh.
 # Each script drives the real kayles_server / kayles_client binaries over

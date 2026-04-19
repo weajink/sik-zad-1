@@ -454,8 +454,9 @@ TEST(Integration, GiveUpByNonMemberReturnsWrongMsg) {
     auto resp = udp_exchange(srv.port, payload);
     ASSERT_EQ(resp.size(), 14u);
     EXPECT_EQ(resp[12], MSG_WRONG_STATUS);
-    // error_index should point at the player_id field (byte 1).
-    EXPECT_EQ(resp[13], 1u);
+    // Updated spec: a nonzero player_id is never "invalid" — a player-in-game
+    // mismatch is attributed to the game_id field (byte 5).
+    EXPECT_EQ(resp[13], 5u);
     // Echo of 9-byte payload; bytes 9..11 must be zero-padded.
     for (size_t i = 0; i < payload.size(); ++i) {
         EXPECT_EQ(resp[i], payload[i]);

@@ -41,8 +41,6 @@ static uint32_t read_u32_be(const std::vector<uint8_t>& buf, size_t offset) {
            static_cast<uint32_t>(buf[offset + 3]);
 }
 
-static pawn_row_t solid_row(size_t n) { return pawn_row_t(n, true); }
-
 // ===========================================================================
 // Network byte order: every multi-byte field must be big-endian.
 // The tests use values with distinct bytes so that endian-swap bugs are
@@ -233,17 +231,28 @@ TEST(ProtocolSize, GiveUpExactlyNineBytes) {
 // Only the exact expected size should succeed.
 // ===========================================================================
 
+// Helper: fill buf[1..4] with a nonzero big-endian player_id so that
+// length-based success cases aren't rejected by the player_id==0 check.
+static void set_nonzero_player_id(std::vector<uint8_t> &buf) {
+    if (buf.size() >= 5) {
+        buf[1] = 0;
+        buf[2] = 0;
+        buf[3] = 0;
+        buf[4] = 1;
+    }
+}
+
 TEST(ProtocolDeserialize, SweepAllLengthsForJoin) {
     for (size_t n = 0; n < 16; ++n) {
         std::vector<uint8_t> buf(n, 0);
         // msg_type = 0 (JOIN) iff we put 0 at byte 0; but empty buffer fails before.
         if (n > 0) buf[0] = 0;
+        set_nonzero_player_id(buf);
         auto r = deserialize_client_message(buf);
         if (n == 5) {
             EXPECT_TRUE(r.has_value()) << "length 5 must succeed for JOIN";
         } else {
-            EXPECT_FALSE(r.has_value())
-                << "length " << n << " must fail for JOIN";
+            EXPECT_FALSE(r.has_value()) << "length " << n << " must fail for JOIN";
         }
     }
 }
@@ -252,12 +261,12 @@ TEST(ProtocolDeserialize, SweepAllLengthsForMove1) {
     for (size_t n = 0; n < 16; ++n) {
         std::vector<uint8_t> buf(n, 0);
         if (n > 0) buf[0] = 1;
+        set_nonzero_player_id(buf);
         auto r = deserialize_client_message(buf);
         if (n == 10) {
             EXPECT_TRUE(r.has_value()) << "length 10 must succeed for MOVE_1";
         } else {
-            EXPECT_FALSE(r.has_value())
-                << "length " << n << " must fail for MOVE_1";
+            EXPECT_FALSE(r.has_value()) << "length " << n << " must fail for MOVE_1";
         }
     }
 }
@@ -266,12 +275,12 @@ TEST(ProtocolDeserialize, SweepAllLengthsForMove2) {
     for (size_t n = 0; n < 16; ++n) {
         std::vector<uint8_t> buf(n, 0);
         if (n > 0) buf[0] = 2;
+        set_nonzero_player_id(buf);
         auto r = deserialize_client_message(buf);
         if (n == 10) {
             EXPECT_TRUE(r.has_value()) << "length 10 must succeed for MOVE_2";
         } else {
-            EXPECT_FALSE(r.has_value())
-                << "length " << n << " must fail for MOVE_2";
+            EXPECT_FALSE(r.has_value()) << "length " << n << " must fail for MOVE_2";
         }
     }
 }
@@ -280,12 +289,12 @@ TEST(ProtocolDeserialize, SweepAllLengthsForKeepAlive) {
     for (size_t n = 0; n < 16; ++n) {
         std::vector<uint8_t> buf(n, 0);
         if (n > 0) buf[0] = 3;
+        set_nonzero_player_id(buf);
         auto r = deserialize_client_message(buf);
         if (n == 9) {
             EXPECT_TRUE(r.has_value()) << "length 9 must succeed for KEEP_ALIVE";
         } else {
-            EXPECT_FALSE(r.has_value())
-                << "length " << n << " must fail for KEEP_ALIVE";
+            EXPECT_FALSE(r.has_value()) << "length " << n << " must fail for KEEP_ALIVE";
         }
     }
 }
@@ -294,12 +303,12 @@ TEST(ProtocolDeserialize, SweepAllLengthsForGiveUp) {
     for (size_t n = 0; n < 16; ++n) {
         std::vector<uint8_t> buf(n, 0);
         if (n > 0) buf[0] = 4;
+        set_nonzero_player_id(buf);
         auto r = deserialize_client_message(buf);
         if (n == 9) {
             EXPECT_TRUE(r.has_value()) << "length 9 must succeed for GIVE_UP";
         } else {
-            EXPECT_FALSE(r.has_value())
-                << "length " << n << " must fail for GIVE_UP";
+            EXPECT_FALSE(r.has_value()) << "length " << n << " must fail for GIVE_UP";
         }
     }
 }

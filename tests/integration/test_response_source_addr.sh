@@ -58,20 +58,35 @@ if src1 != ('127.0.0.1', $PORT) or src2 != ('127.0.0.1', $PORT):
     print(f"FAIL: srcs {src1} {src2}, expected 127.0.0.1:$PORT")
     sys.exit(1)
 
-# Responses should differ: r1 shows WAITING (player_a=11, b=0),
-# r2 shows TURN_B (player_a=11, player_b=22).
-if r1[8:12] != bytes.fromhex('0000000b') or r1[12] != 0:
-    print(f"FAIL: r1 unexpected: {r1.hex()}")
+# GameState wire layout:
+#   [0:4]  = game_id
+#   [4:8]  = player_a_id
+#   [8:12] = player_b_id
+#   [12]   = status
+#
+# Expected for r1 (WAITING): player_a=11 (0x0000000b), player_b=0, status=0.
+# Expected for r2 (TURN_B):  player_a=11 (0x0000000b), player_b=22 (0x00000016), status=2.
+if r1[4:8] != bytes.fromhex('0000000b'):
+    print(f"FAIL: r1 player_a should be 11, got r1={r1.hex()}")
     sys.exit(1)
-if r2[8:12] != bytes.fromhex('0000000b') or r2[12:13] != bytes.fromhex('02'):
-    print(f"FAIL: r2 status should be TURN_B: {r2.hex()}")
+if r1[8:12] != bytes.fromhex('00000000'):
+    print(f"FAIL: r1 player_b should be 0, got r1={r1.hex()}")
     sys.exit(1)
-# player_b in r2 should be 22.
-if r2[12-4:12] != bytes.fromhex('00000016'):
-    # offset 8..12 is player_b in GameState layout.
-    print(f"FAIL: r2 player_b bytes wrong: {r2.hex()}")
+if r1[12] != 0:
+    print(f"FAIL: r1 status should be 0 (WAITING), got r1={r1.hex()}")
     sys.exit(1)
-print(f"OK: both responses came from server, correct payloads")
+
+if r2[4:8] != bytes.fromhex('0000000b'):
+    print(f"FAIL: r2 player_a should be 11, got r2={r2.hex()}")
+    sys.exit(1)
+if r2[8:12] != bytes.fromhex('00000016'):
+    print(f"FAIL: r2 player_b should be 22, got r2={r2.hex()}")
+    sys.exit(1)
+if r2[12] != 2:
+    print(f"FAIL: r2 status should be 2 (TURN_B), got r2={r2.hex()}")
+    sys.exit(1)
+
+print("OK: both responses came from server, correct payloads")
 PY
 
 echo "All response_source_addr tests passed."
