@@ -70,7 +70,7 @@ echo "Test 4: MOVE_2 where player is not a participant ⇒ WRONG_MSG, error_inde
 # Create a game with players 11 and 22.
 run_client "$PORT" "0/11"
 run_client "$PORT" "0/22"
-GAME_ID=$(echo "$CLIENT_STDOUT" | grep -oE 'game_id=[0-9]+' | head -1 | cut -d= -f2)
+GAME_ID=$(echo "$CLIENT_STDOUT" | grep -oE 'Game [0-9]+' | head -1 | awk '{print $2}')
 
 # Encode game_id and the non-participating player_id into 8 hex chars each
 # (big-endian u32). Player 99 is not in this game.

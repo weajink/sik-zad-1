@@ -16,19 +16,19 @@ start_server "11" "$PORT" 30
 
 echo "Test 1: player_id=1 (min) and player_id=4294967295 (max) play a full game"
 run_client "$PORT" "0/1"
-assert_stdout_contains "player_a=1"
-assert_stdout_contains "status=WAITING_FOR_OPPONENT"
+assert_stdout_contains "Player A: 1$"
+assert_stdout_contains "Status: waiting for opponent"
 
 run_client "$PORT" "0/4294967295"
-assert_stdout_contains "status=TURN_B"
-assert_stdout_contains "player_a=1"
-assert_stdout_contains "player_b=4294967295"
-GID=$(echo "$CLIENT_STDOUT" | grep -oE 'game_id=[0-9]+' | head -1 | cut -d= -f2)
+assert_stdout_contains "Status: player B's turn"
+assert_stdout_contains "Player A: 1$"
+assert_stdout_contains "Player B: 4294967295$"
+GID=$(echo "$CLIENT_STDOUT" | grep -oE 'Game [0-9]+' | head -1 | awk '{print $2}')
 
 # B (4294967295) MOVE_2 at pawn=0 ⇒ WIN_B.
 run_client "$PORT" "2/4294967295/$GID/0"
-assert_stdout_contains "status=WIN_B"
-assert_stdout_contains "player_b=4294967295"
+assert_stdout_contains "Status: player B wins"
+assert_stdout_contains "Player B: 4294967295$"
 
 echo "Test 2: Client with player_id > 2^32-1 must be rejected at CLI"
 run_client_raw -a 127.0.0.1 -p 12345 -m "0/4294967296" -t 1

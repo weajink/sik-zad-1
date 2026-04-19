@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cstring>
 #include <expected>
+#include <iomanip>
 #include <ostream>
 #include <span>
 #include <utility>
@@ -283,75 +284,48 @@ namespace kayles::protocol {
     // PRETTY PRINTING
     // ========================================================================
 
-    inline std::ostream &operator<<(std::ostream &os, ClientMessageType t) {
-        switch (t) {
-            case ClientMessageType::MSG_JOIN:
-                return os << "MSG_JOIN";
-            case ClientMessageType::MSG_MOVE_1:
-                return os << "MSG_MOVE_1";
-            case ClientMessageType::MSG_MOVE_2:
-                return os << "MSG_MOVE_2";
-            case ClientMessageType::MSG_KEEP_ALIVE:
-                return os << "MSG_KEEP_ALIVE";
-            case ClientMessageType::MSG_GIVE_UP:
-                return os << "MSG_GIVE_UP";
-        }
-        std::unreachable();
-    }
-
     inline std::ostream &operator<<(std::ostream &os, GameStatus s) {
         switch (s) {
             case GameStatus::WAITING_FOR_OPPONENT:
-                return os << "WAITING_FOR_OPPONENT";
+                return os << "waiting for opponent";
             case GameStatus::TURN_A:
-                return os << "TURN_A";
+                return os << "player A's turn";
             case GameStatus::TURN_B:
-                return os << "TURN_B";
+                return os << "player B's turn";
             case GameStatus::WIN_A:
-                return os << "WIN_A";
+                return os << "player A wins";
             case GameStatus::WIN_B:
-                return os << "WIN_B";
+                return os << "player B wins";
         }
         std::unreachable();
     }
 
-    inline std::ostream &operator<<(std::ostream &os, const ClientMessage &m) {
-        os << m.msg_type << " player_id=" << m.player_id;
-        switch (m.msg_type) {
-            case ClientMessageType::MSG_JOIN:
-                break;
-            case ClientMessageType::MSG_KEEP_ALIVE:
-            case ClientMessageType::MSG_GIVE_UP:
-                os << " game_id=" << m.game_id;
-                break;
-            case ClientMessageType::MSG_MOVE_1:
-            case ClientMessageType::MSG_MOVE_2:
-                os << " game_id=" << m.game_id << " pawn=" << static_cast<unsigned>(m.pawn);
-                break;
-        }
+    inline std::ostream &operator<<(std::ostream &os, const GameState &s) {
+        os << "Game " << s.game_id << "\n"
+           << "  Player A: " << s.player_a_id << "\n"
+           << "  Player B: ";
+        if (s.player_b_id == 0)
+            os << "<none>";
+        else
+            os << s.player_b_id;
+        os << "\n  Status: " << s.status << "\n  Pawns: ";
+        for (bool p : s.pawn_row)
+            os << (p ? '#' : '.');
         return os;
     }
 
-    inline std::ostream &operator<<(std::ostream &os, const GameState &s) {
-        os << "GameState{game_id=" << s.game_id << " player_a=" << s.player_a_id
-           << " player_b=" << s.player_b_id << " status=" << s.status
-           << " max_pawn=" << static_cast<unsigned>(s.max_pawn) << " pawn_row=";
-        for (bool p : s.pawn_row)
-            os << (p ? '1' : '0');
-        return os << '}';
-    }
-
     inline std::ostream &operator<<(std::ostream &os, const MessageWrong &w) {
-        os << "MessageWrong{client_bytes=";
-        os << std::hex;
+        os << "Server rejected the message (invalid byte at index "
+           << static_cast<unsigned>(w.error_index) << ").\nEchoed bytes (hex):";
+        auto old_flags = os.flags();
+        auto old_fill = os.fill();
+        os << std::hex << std::setfill('0');
         for (size_t i = 0; i < CLIENT_MESSAGE_SIZE_WITH_BUF; ++i) {
-            os << static_cast<unsigned>(w.client_bytes[i]);
-            if (i + 1 < CLIENT_MESSAGE_SIZE_WITH_BUF)
-                os << ' ';
+            os << ' ' << std::setw(2) << static_cast<unsigned>(w.client_bytes[i]);
         }
-        os << std::dec;
-        return os << " status=" << static_cast<unsigned>(w.status)
-                  << " error_index=" << static_cast<unsigned>(w.error_index) << '}';
+        os.flags(old_flags);
+        os.fill(old_fill);
+        return os;
     }
 }  // namespace kayles::protocol
 

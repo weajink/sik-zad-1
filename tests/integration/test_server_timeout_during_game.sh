@@ -24,8 +24,8 @@ start_server "1111" "$PORT" 2
 echo "Test: B joins, then B stops sending messages for > 2s ⇒ B loses ⇒ WIN_A"
 run_client "$PORT" "0/42"
 run_client "$PORT" "0/99"
-assert_stdout_contains "status=TURN_B"
-GID=$(echo "$CLIENT_STDOUT" | grep -oE 'game_id=[0-9]+' | head -1 | cut -d= -f2)
+assert_stdout_contains "Status: player B's turn"
+GID=$(echo "$CLIENT_STDOUT" | grep -oE 'Game [0-9]+' | head -1 | awk '{print $2}')
 
 # A must keep its own clock fresh so it isn't the one timing out; otherwise
 # both sides are silent and the tie goes to whoever was silent first (A).
@@ -38,6 +38,6 @@ sleep 1.2
 # A's final KEEP_ALIVE should trigger the server's timeout check; since A is
 # still fresh and B is stale, B loses → WIN_A.
 run_client "$PORT" "3/42/$GID"
-assert_stdout_contains "status=WIN_A"
+assert_stdout_contains "Status: player A wins"
 
 echo "All server_timeout_during_game tests passed."

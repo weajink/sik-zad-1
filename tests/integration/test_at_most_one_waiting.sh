@@ -18,18 +18,18 @@ start_server "1111" "$PORT" 30
 echo "Test 1: A joins ⇒ status=WAITING_FOR_OPPONENT"
 run_client "$PORT" "0/11"
 assert_exit_code 0
-assert_stdout_contains "status=WAITING_FOR_OPPONENT"
-assert_stdout_contains "player_a=11"
-assert_stdout_contains "player_b=0"
-GAME_ID_1=$(echo "$CLIENT_STDOUT" | grep -oE 'game_id=[0-9]+' | head -1 | cut -d= -f2)
+assert_stdout_contains "Status: waiting for opponent"
+assert_stdout_contains "Player A: 11$"
+assert_stdout_contains "Player B: <none>"
+GAME_ID_1=$(echo "$CLIENT_STDOUT" | grep -oE 'Game [0-9]+' | head -1 | awk '{print $2}')
 
 echo "Test 2: B joins ⇒ game_1 becomes TURN_B (not a second WAITING game)"
 run_client "$PORT" "0/22"
 assert_exit_code 0
-assert_stdout_contains "status=TURN_B"
-assert_stdout_contains "player_a=11"
-assert_stdout_contains "player_b=22"
-GAME_ID_2=$(echo "$CLIENT_STDOUT" | grep -oE 'game_id=[0-9]+' | head -1 | cut -d= -f2)
+assert_stdout_contains "Status: player B's turn"
+assert_stdout_contains "Player A: 11$"
+assert_stdout_contains "Player B: 22$"
+GAME_ID_2=$(echo "$CLIENT_STDOUT" | grep -oE 'Game [0-9]+' | head -1 | awk '{print $2}')
 if [[ "$GAME_ID_2" != "$GAME_ID_1" ]]; then
     echo "  FAIL: second JOIN should have paired with game $GAME_ID_1, got $GAME_ID_2"
     exit 1
@@ -38,10 +38,10 @@ fi
 echo "Test 3: Third player joins ⇒ creates a NEW WAITING game (distinct game_id)"
 run_client "$PORT" "0/33"
 assert_exit_code 0
-assert_stdout_contains "status=WAITING_FOR_OPPONENT"
-assert_stdout_contains "player_a=33"
-assert_stdout_contains "player_b=0"
-GAME_ID_3=$(echo "$CLIENT_STDOUT" | grep -oE 'game_id=[0-9]+' | head -1 | cut -d= -f2)
+assert_stdout_contains "Status: waiting for opponent"
+assert_stdout_contains "Player A: 33$"
+assert_stdout_contains "Player B: <none>"
+GAME_ID_3=$(echo "$CLIENT_STDOUT" | grep -oE 'Game [0-9]+' | head -1 | awk '{print $2}')
 if [[ "$GAME_ID_3" == "$GAME_ID_1" ]]; then
     echo "  FAIL: third JOIN should create a new game_id, not reuse $GAME_ID_1"
     exit 1
@@ -50,10 +50,10 @@ fi
 echo "Test 4: 4th player joins the 3rd player ⇒ pairs with game 3, status TURN_B"
 run_client "$PORT" "0/44"
 assert_exit_code 0
-assert_stdout_contains "status=TURN_B"
-assert_stdout_contains "player_a=33"
-assert_stdout_contains "player_b=44"
-GAME_ID_4=$(echo "$CLIENT_STDOUT" | grep -oE 'game_id=[0-9]+' | head -1 | cut -d= -f2)
+assert_stdout_contains "Status: player B's turn"
+assert_stdout_contains "Player A: 33$"
+assert_stdout_contains "Player B: 44$"
+GAME_ID_4=$(echo "$CLIENT_STDOUT" | grep -oE 'Game [0-9]+' | head -1 | awk '{print $2}')
 if [[ "$GAME_ID_4" != "$GAME_ID_3" ]]; then
     echo "  FAIL: 4th JOIN should have paired with game $GAME_ID_3, got $GAME_ID_4"
     exit 1
@@ -61,8 +61,8 @@ fi
 
 echo "Test 5: Third pair creates a third distinct game"
 run_client "$PORT" "0/55"
-assert_stdout_contains "status=WAITING_FOR_OPPONENT"
-GAME_ID_5=$(echo "$CLIENT_STDOUT" | grep -oE 'game_id=[0-9]+' | head -1 | cut -d= -f2)
+assert_stdout_contains "Status: waiting for opponent"
+GAME_ID_5=$(echo "$CLIENT_STDOUT" | grep -oE 'Game [0-9]+' | head -1 | awk '{print $2}')
 if [[ "$GAME_ID_5" == "$GAME_ID_1" || "$GAME_ID_5" == "$GAME_ID_3" ]]; then
     echo "  FAIL: 5th JOIN reused an existing game_id ($GAME_ID_5)"
     exit 1

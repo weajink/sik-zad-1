@@ -26,17 +26,17 @@ start_server "1111" "$PORT" 30
 
 run_client "$PORT" "0/1"
 run_client "$PORT" "0/2"
-assert_stdout_contains "status=TURN_B"
-GID1=$(echo "$CLIENT_STDOUT" | grep -oE 'game_id=[0-9]+' | head -1 | cut -d= -f2)
+assert_stdout_contains "Status: player B's turn"
+GID1=$(echo "$CLIENT_STDOUT" | grep -oE 'Game [0-9]+' | head -1 | awk '{print $2}')
 
 # Player 1 (already playing as A in game 1) sends JOIN again.
 # No WAITING game exists right now, so this creates a new WAITING game with
 # player 1 as A.
 run_client "$PORT" "0/1"
-assert_stdout_contains "status=WAITING_FOR_OPPONENT"
-assert_stdout_contains "player_a=1"
-assert_stdout_contains "player_b=0"
-GID2=$(echo "$CLIENT_STDOUT" | grep -oE 'game_id=[0-9]+' | head -1 | cut -d= -f2)
+assert_stdout_contains "Status: waiting for opponent"
+assert_stdout_contains "Player A: 1$"
+assert_stdout_contains "Player B: <none>"
+GID2=$(echo "$CLIENT_STDOUT" | grep -oE 'Game [0-9]+' | head -1 | awk '{print $2}')
 if [[ "$GID2" == "$GID1" ]]; then
     echo "  FAIL: duplicate JOIN must create a new game, got same game_id=$GID1"
     exit 1
@@ -45,16 +45,16 @@ fi
 echo "Test 2: Player 1 can then play in both games independently"
 # KA on game 1 — still TURN_B.
 run_client "$PORT" "3/1/$GID1"
-assert_stdout_contains "status=TURN_B"
-if ! echo "$CLIENT_STDOUT" | grep -qE "game_id=$GID1\b"; then
+assert_stdout_contains "Status: player B's turn"
+if ! echo "$CLIENT_STDOUT" | grep -qE "Game $GID1\b"; then
     echo "  FAIL: wrong game in KA response"
     exit 1
 fi
 
 # KA on game 2 — still WAITING.
 run_client "$PORT" "3/1/$GID2"
-assert_stdout_contains "status=WAITING_FOR_OPPONENT"
-if ! echo "$CLIENT_STDOUT" | grep -qE "game_id=$GID2\b"; then
+assert_stdout_contains "Status: waiting for opponent"
+if ! echo "$CLIENT_STDOUT" | grep -qE "Game $GID2\b"; then
     echo "  FAIL: wrong game in KA response"
     exit 1
 fi
@@ -65,11 +65,11 @@ fi
 # -------------------------------------------------------------------------
 echo "Test 3: Player 2 joins game 2 as B (distinct from game 1)"
 run_client "$PORT" "0/2"
-assert_stdout_contains "status=TURN_B"
-assert_stdout_contains "player_a=1"
-assert_stdout_contains "player_b=2"
+assert_stdout_contains "Status: player B's turn"
+assert_stdout_contains "Player A: 1$"
+assert_stdout_contains "Player B: 2$"
 # Must be game 2 (game 1 was already paired).
-if ! echo "$CLIENT_STDOUT" | grep -qE "game_id=$GID2\b"; then
+if ! echo "$CLIENT_STDOUT" | grep -qE "Game $GID2\b"; then
     echo "  FAIL: expected game_id=$GID2 in second pairing"
     echo "  STDOUT: $CLIENT_STDOUT"
     exit 1
@@ -85,16 +85,16 @@ start_server "11" "$PORT" 30
 
 run_client "$PORT" "0/1"
 run_client "$PORT" "0/2"
-GID=$(echo "$CLIENT_STDOUT" | grep -oE 'game_id=[0-9]+' | head -1 | cut -d= -f2)
+GID=$(echo "$CLIENT_STDOUT" | grep -oE 'Game [0-9]+' | head -1 | awk '{print $2}')
 # B wins immediately.
 run_client "$PORT" "2/2/$GID/0"
-assert_stdout_contains "status=WIN_B"
+assert_stdout_contains "Status: player B wins"
 
 # New JOIN from player 3 — must create a new WAITING game.
 run_client "$PORT" "0/3"
-assert_stdout_contains "status=WAITING_FOR_OPPONENT"
-assert_stdout_contains "player_a=3"
-NEW_GID=$(echo "$CLIENT_STDOUT" | grep -oE 'game_id=[0-9]+' | head -1 | cut -d= -f2)
+assert_stdout_contains "Status: waiting for opponent"
+assert_stdout_contains "Player A: 3$"
+NEW_GID=$(echo "$CLIENT_STDOUT" | grep -oE 'Game [0-9]+' | head -1 | awk '{print $2}')
 if [[ "$NEW_GID" == "$GID" ]]; then
     echo "  FAIL: new game must have distinct ID from finished game"
     exit 1

@@ -27,12 +27,12 @@ for ((i = 0; i < NUM; i++)); do
     pa=$((100 + 2*i))
     pb=$((101 + 2*i))
     run_client "$PORT" "0/$pa"
-    assert_stdout_contains "status=WAITING_FOR_OPPONENT"
+    assert_stdout_contains "Status: waiting for opponent"
     run_client "$PORT" "0/$pb"
-    assert_stdout_contains "status=TURN_B"
-    assert_stdout_contains "player_a=$pa"
-    assert_stdout_contains "player_b=$pb"
-    gid=$(echo "$CLIENT_STDOUT" | grep -oE 'game_id=[0-9]+' | head -1 | cut -d= -f2)
+    assert_stdout_contains "Status: player B's turn"
+    assert_stdout_contains "Player A: $pa$"
+    assert_stdout_contains "Player B: $pb$"
+    gid=$(echo "$CLIENT_STDOUT" | grep -oE 'Game [0-9]+' | head -1 | awk '{print $2}')
     GAMES+=("$gid")
     PLAYERS_A+=("$pa")
     PLAYERS_B+=("$pb")
@@ -52,12 +52,12 @@ for ((i = 0; i < NUM; i++)); do
     pb="${PLAYERS_B[i]}"
     pa="${PLAYERS_A[i]}"
     run_client "$PORT" "1/$pb/$gid/0"
-    assert_stdout_contains "status=TURN_A"
-    assert_stdout_contains "player_a=$pa"
-    assert_stdout_contains "player_b=$pb"
-    assert_stdout_contains "pawn_row=0111"
+    assert_stdout_contains "Status: player A's turn"
+    assert_stdout_contains "Player A: $pa$"
+    assert_stdout_contains "Player B: $pb$"
+    assert_stdout_contains "Pawns: \.###"
     # game_id must match the one we queried — server must not mix up games.
-    if ! echo "$CLIENT_STDOUT" | grep -qE "game_id=$gid\b"; then
+    if ! echo "$CLIENT_STDOUT" | grep -qE "Game $gid\b"; then
         echo "  FAIL: wrong game_id in response for game $gid"
         echo "  STDOUT: $CLIENT_STDOUT"
         exit 1
@@ -70,8 +70,8 @@ for ((i = 0; i < NUM; i++)); do
     pa="${PLAYERS_A[i]}"
     # A knocks pin 1 via MOVE_1 ⇒ TURN_B again (so game doesn't end yet).
     run_client "$PORT" "1/$pa/$gid/1"
-    assert_stdout_contains "status=TURN_B"
-    assert_stdout_contains "pawn_row=0011"
+    assert_stdout_contains "Status: player B's turn"
+    assert_stdout_contains "Pawns: \.\.##"
 done
 
 echo "Phase 4: Each B finishes via MOVE_2 at pawn=2 (knocks 2,3) ⇒ WIN_B"
@@ -79,8 +79,8 @@ for ((i = 0; i < NUM; i++)); do
     gid="${GAMES[i]}"
     pb="${PLAYERS_B[i]}"
     run_client "$PORT" "2/$pb/$gid/2"
-    assert_stdout_contains "status=WIN_B"
-    assert_stdout_contains "pawn_row=0000"
+    assert_stdout_contains "Status: player B wins"
+    assert_stdout_contains "Pawns: \.\.\.\."
 done
 
 echo "Phase 5: KEEP_ALIVE on each finished game returns its own WIN_B state"
@@ -89,12 +89,12 @@ for ((i = 0; i < NUM; i++)); do
     pa="${PLAYERS_A[i]}"
     pb="${PLAYERS_B[i]}"
     run_client "$PORT" "3/$pa/$gid"
-    assert_stdout_contains "status=WIN_B"
+    assert_stdout_contains "Status: player B wins"
     # Verify correct A and B IDs for THIS game, not some other one.
-    assert_stdout_contains "player_a=$pa"
-    assert_stdout_contains "player_b=$pb"
-    if ! echo "$CLIENT_STDOUT" | grep -qE "game_id=$gid\b"; then
-        echo "  FAIL: game_id mismatch — wanted $gid, got $(echo "$CLIENT_STDOUT" | grep -oE 'game_id=[0-9]+' | head -1)"
+    assert_stdout_contains "Player A: $pa$"
+    assert_stdout_contains "Player B: $pb$"
+    if ! echo "$CLIENT_STDOUT" | grep -qE "Game $gid\b"; then
+        echo "  FAIL: game_id mismatch — wanted $gid, got $(echo "$CLIENT_STDOUT" | grep -oE 'Game [0-9]+' | head -1)"
         echo "  STDOUT: $CLIENT_STDOUT"
         exit 1
     fi
@@ -105,7 +105,7 @@ pa0="${PLAYERS_A[0]}"
 gid1="${GAMES[1]}"
 run_client "$PORT" "3/$pa0/$gid1"
 # Player $pa0 is not in game $gid1 ⇒ WRONG_MSG.
-assert_stdout_contains "MessageWrong"
-assert_stdout_contains "status=255"
+assert_stdout_contains "Server rejected the message"
+assert_stdout_contains "Server rejected the message"
 
 echo "All concurrent_games_interleaved tests passed."

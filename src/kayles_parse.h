@@ -25,9 +25,10 @@ namespace kayles::parse {
     using namespace kayles::protocol;
 
     template <typename T>
-    bool assign_or_report(std::optional<T> &slot, std::expected<T, KaylesError> res) {
+    bool assign_or_report(std::string_view prog, std::optional<T> &slot,
+                          std::expected<T, KaylesError> res) {
         if (!res.has_value()) {
-            std::cerr << res.error().what() << "\n";
+            std::cerr << prog << ": arg: " << res.error().what() << "\n";
             return false;
         }
         slot = std::move(res.value());

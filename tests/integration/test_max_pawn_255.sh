@@ -19,20 +19,19 @@ start_server "$LONG" "$PORT" 60
 
 echo "Test 1: 256-pin board advertises max_pawn=255"
 run_client "$PORT" "0/1"
-assert_stdout_contains "max_pawn=255"
-assert_stdout_contains "status=WAITING_FOR_OPPONENT"
+assert_stdout_contains "Status: waiting for opponent"
 
 echo "Test 2: Second JOIN starts TURN_B"
 run_client "$PORT" "0/2"
-assert_stdout_contains "status=TURN_B"
-GAME_ID=$(echo "$CLIENT_STDOUT" | grep -oE 'game_id=[0-9]+' | head -1 | cut -d= -f2)
+assert_stdout_contains "Status: player B's turn"
+GAME_ID=$(echo "$CLIENT_STDOUT" | grep -oE 'Game [0-9]+' | head -1 | awk '{print $2}')
 
 echo "Test 3: B knocks pin 128 (middle) via MOVE_1"
 run_client "$PORT" "1/2/$GAME_ID/128"
-assert_stdout_contains "status=TURN_A"
+assert_stdout_contains "Status: player A's turn"
 # The bitmap should have a 0 at index 128.
 # Extract pawn_row and verify.
-ROW=$(echo "$CLIENT_STDOUT" | grep -oE 'pawn_row=[01]+' | cut -d= -f2)
+ROW=$(echo "$CLIENT_STDOUT" | grep -oE 'Pawns: [.#]+' | head -1 | sed 's/^Pawns: //' | tr '.#' '01')
 if [[ ${#ROW} -ne 256 ]]; then
     echo "  FAIL: pawn_row length should be 256, got ${#ROW}: $ROW"
     exit 1
@@ -51,8 +50,8 @@ fi
 
 echo "Test 4: A knocks pin 255 (last pin) via MOVE_1"
 run_client "$PORT" "1/1/$GAME_ID/255"
-assert_stdout_contains "status=TURN_B"
-ROW=$(echo "$CLIENT_STDOUT" | grep -oE 'pawn_row=[01]+' | cut -d= -f2)
+assert_stdout_contains "Status: player B's turn"
+ROW=$(echo "$CLIENT_STDOUT" | grep -oE 'Pawns: [.#]+' | head -1 | sed 's/^Pawns: //' | tr '.#' '01')
 if [[ "${ROW:255:1}" != "0" ]]; then
     echo "  FAIL: pin at 255 should be 0"
     echo "  ROW: $ROW"
@@ -61,8 +60,8 @@ fi
 
 echo "Test 5: B knocks pin 0 (first pin) via MOVE_1"
 run_client "$PORT" "1/2/$GAME_ID/0"
-assert_stdout_contains "status=TURN_A"
-ROW=$(echo "$CLIENT_STDOUT" | grep -oE 'pawn_row=[01]+' | cut -d= -f2)
+assert_stdout_contains "Status: player A's turn"
+ROW=$(echo "$CLIENT_STDOUT" | grep -oE 'Pawns: [.#]+' | head -1 | sed 's/^Pawns: //' | tr '.#' '01')
 if [[ "${ROW:0:1}" != "0" ]]; then
     echo "  FAIL: pin at 0 should be 0"
     exit 1
@@ -70,8 +69,8 @@ fi
 
 echo "Test 6: A does MOVE_2 at pawn=1 (knocks pins 1,2)"
 run_client "$PORT" "2/1/$GAME_ID/1"
-assert_stdout_contains "status=TURN_B"
-ROW=$(echo "$CLIENT_STDOUT" | grep -oE 'pawn_row=[01]+' | cut -d= -f2)
+assert_stdout_contains "Status: player B's turn"
+ROW=$(echo "$CLIENT_STDOUT" | grep -oE 'Pawns: [.#]+' | head -1 | sed 's/^Pawns: //' | tr '.#' '01')
 if [[ "${ROW:1:1}" != "0" || "${ROW:2:1}" != "0" ]]; then
     echo "  FAIL: pins 1,2 should be 0"
     echo "  ROW: $ROW"
@@ -80,6 +79,6 @@ fi
 
 echo "Test 7: B gives up ⇒ WIN_A on 256-pin board"
 run_client "$PORT" "4/2/$GAME_ID"
-assert_stdout_contains "status=WIN_A"
+assert_stdout_contains "Status: player A wins"
 
 echo "All max_pawn_255 tests passed."

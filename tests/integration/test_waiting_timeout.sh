@@ -20,9 +20,9 @@ start_server "111" "$PORT" 1
 echo "Test 1: A joins → WAITING game created"
 run_client "$PORT" "0/42"
 assert_exit_code 0
-assert_stdout_contains "status=WAITING_FOR_OPPONENT"
-assert_stdout_contains "player_a=42 "
-FIRST_GAME_ID=$(echo "$CLIENT_STDOUT" | grep -oE "game_id=[0-9]+" | head -1 | cut -d= -f2)
+assert_stdout_contains "Status: waiting for opponent"
+assert_stdout_contains "Player A: 42$"
+FIRST_GAME_ID=$(echo "$CLIENT_STDOUT" | grep -oE "Game [0-9]+" | head -1 | awk '{print $2}')
 
 echo "Test 2: After server_timeout, A's WAITING game is discarded"
 # Sleep > server_timeout to let A's slot expire.
@@ -32,9 +32,9 @@ sleep 2
 # NOT join the (now-discarded) one as B.
 run_client "$PORT" "0/99"
 assert_exit_code 0
-assert_stdout_contains "status=WAITING_FOR_OPPONENT"        # WAITING again — not TURN_B
-assert_stdout_contains "player_a=99 "  # 99 is the new A, not the new B
-NEW_GAME_ID=$(echo "$CLIENT_STDOUT" | grep -oE "game_id=[0-9]+" | head -1 | cut -d= -f2)
+assert_stdout_contains "Status: waiting for opponent"        # WAITING again — not TURN_B
+assert_stdout_contains "Player A: 99$"  # 99 is the new A, not the new B
+NEW_GAME_ID=$(echo "$CLIENT_STDOUT" | grep -oE "Game [0-9]+" | head -1 | awk '{print $2}')
 
 if [[ "$NEW_GAME_ID" == "$FIRST_GAME_ID" ]]; then
     echo "  FAIL: new game reused discarded game_id $FIRST_GAME_ID"
@@ -45,6 +45,6 @@ echo "Test 3: KEEP_ALIVE on the discarded game returns WRONG_MSG"
 # The first game no longer exists.
 run_client "$PORT" "3/42/$FIRST_GAME_ID"
 assert_exit_code 0
-assert_stdout_contains "status=255"
+assert_stdout_contains "Server rejected the message"
 
 echo "All waiting_timeout tests passed."

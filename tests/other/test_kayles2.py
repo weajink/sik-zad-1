@@ -1248,13 +1248,16 @@ class TestTimeout:
                 # B makes the first move, so it becomes A's turn.
                 udp_send_recv(sb, pack_move1(1002, game_id, 0), addr)
 
-                # Keep the game alive by having A send keep-alives before timeout.
+                # Both players must ping within server_timeout — A's pings do
+                # not refresh B's clock (task.txt §5.3).
                 for _ in range(4):
                     time.sleep(_SLEEP_PING)
                     raw_a = udp_send_recv(sa, pack_keep_alive(1001, game_id), addr)
                     assert raw_a is not None, "A should keep the game alive"
                     gs_a = GameState(raw_a)
                     assert gs_a.status in (STATUS_TURN_A, STATUS_TURN_B, STATUS_WAITING)
+                    raw_b = udp_send_recv(sb, pack_keep_alive(1002, game_id), addr)
+                    assert raw_b is not None, "B should keep the game alive"
 
                 # Now B should still be able to query the game state.
                 raw = udp_send_recv(sb, pack_keep_alive(1002, game_id), addr)

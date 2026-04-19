@@ -57,7 +57,7 @@ namespace kayles::server {
         void start() {
             socket_fd = socket(AF_INET, SOCK_DGRAM, 0);
             if (socket_fd < 0) {
-                throw std::runtime_error("cannot create a socket");
+                throw std::runtime_error("socket: " + std::string(strerror(errno)));
             }
             server_address.sin_family = AF_INET;
             server_address.sin_addr = address;
@@ -65,10 +65,16 @@ namespace kayles::server {
 
             if (bind(socket_fd, (struct sockaddr *)&server_address,
                      (socklen_t)sizeof(server_address)) < 0) {
-                throw std::runtime_error("bind failed");
+                throw std::runtime_error("bind: " + std::string(strerror(errno)));
             }
 
-            std::cerr << "Server successfully started, listening on port " << port << ".\n";
+            struct sockaddr_in bound {};
+            socklen_t bound_len = sizeof(bound);
+            if (getsockname(socket_fd, (struct sockaddr *)&bound, &bound_len) < 0) {
+                throw std::runtime_error("getsockname: " + std::string(strerror(errno)));
+            }
+            std::cerr << "kayles_server: listening on " << inet_ntoa(bound.sin_addr) << ":"
+                      << ntohs(bound.sin_port) << "\n";
         }
 
         void shut() {
@@ -97,9 +103,9 @@ namespace kayles::server {
 
         void handle_error(struct sockaddr_in &client_address, const char *client_msg_buf,
                           const KaylesError &error) {
-            std::cerr << "Error processing client message from "
-                      << inet_ntoa(client_address.sin_addr) << ":" << ntohs(client_address.sin_port)
-                      << " - " << error.what() << " (index: " << error.error_index() << ")\n";
+            std::cerr << "kayles_server: client " << inet_ntoa(client_address.sin_addr) << ":"
+                      << ntohs(client_address.sin_port) << ": " << error.what()
+                      << " (index: " << error.error_index() << ")\n";
             switch (error.type()) {
                 case ErrorType::EXHAUSTED_GAME_IDS:
                     break;
@@ -110,7 +116,7 @@ namespace kayles::server {
                     auto bytes = msg.serialize();
                     if (sendto(socket_fd, bytes.data(), bytes.size(), 0,
                                (struct sockaddr *)&client_address, sizeof(client_address)) < 0) {
-                        std::cerr << "Failed to send error response: " << strerror(errno) << "\n";
+                        std::cerr << "kayles_server: sendto: " << strerror(errno) << "\n";
                     }
                     break;
                 }
@@ -129,7 +135,7 @@ namespace kayles::server {
                 recvfrom(socket_fd, buffer, CLIENT_MESSAGE_SIZE_WITH_BUF, flags,
                          (struct sockaddr *)&client_address, &address_length);
             if (received_length < 0) {
-                throw std::runtime_error("recvfrom error");
+                throw std::runtime_error("recvfrom: " + std::string(strerror(errno)));
             }
 
             auto msg = deserialize_client_message(
@@ -141,8 +147,7 @@ namespace kayles::server {
                     auto bytes = result.value().serialize();
                     if (sendto(socket_fd, bytes.data(), bytes.size(), 0,
                                (struct sockaddr *)&client_address, sizeof(client_address)) < 0) {
-                        // better error
-                        std::cerr << "Failed to send response: " << strerror(errno) << "\n";
+                        std::cerr << "kayles_server: sendto: " << strerror(errno) << "\n";
                     }
                 } else {
                     handle_error(client_address, buffer, result.error());
@@ -153,7 +158,6 @@ namespace kayles::server {
         }
 
         void run() {
-            std::cerr << "Server loop started.\n";
             for (;;) {
                 run_server_loop();
             }

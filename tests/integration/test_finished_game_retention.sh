@@ -26,12 +26,12 @@ start_server "11" "$PORT" 3
 
 run_client "$PORT" "0/1"
 run_client "$PORT" "0/2"
-GAME_ID=$(echo "$CLIENT_STDOUT" | grep -oE 'game_id=[0-9]+' | head -1 | cut -d= -f2)
+GAME_ID=$(echo "$CLIENT_STDOUT" | grep -oE 'Game [0-9]+' | head -1 | awk '{print $2}')
 run_client "$PORT" "2/2/$GAME_ID/0"
-assert_stdout_contains "status=WIN_B"
+assert_stdout_contains "Status: player B wins"
 
 run_client "$PORT" "3/1/$GAME_ID"
-assert_stdout_contains "status=WIN_B"
+assert_stdout_contains "Status: player B wins"
 
 # -------------------------------------------------------------------------
 # Test 2: After sleeping > server_timeout since the LAST valid message (no
@@ -45,9 +45,9 @@ start_server "11" "$PORT" 1
 
 run_client "$PORT" "0/1"
 run_client "$PORT" "0/2"
-GAME_ID=$(echo "$CLIENT_STDOUT" | grep -oE 'game_id=[0-9]+' | head -1 | cut -d= -f2)
+GAME_ID=$(echo "$CLIENT_STDOUT" | grep -oE 'Game [0-9]+' | head -1 | awk '{print $2}')
 run_client "$PORT" "2/2/$GAME_ID/0"
-assert_stdout_contains "status=WIN_B"
+assert_stdout_contains "Status: player B wins"
 
 # Sleep > 1s; game should be reaped.
 sleep 2.5
@@ -55,11 +55,11 @@ sleep 2.5
 # Probe for the game. The next valid client message triggers the reaper.
 # KEEP_ALIVE from a participant on a purged game ⇒ WRONG_MSG (invalid_game_id).
 run_client "$PORT" "3/1/$GAME_ID"
-assert_stdout_contains "status=255"
+assert_stdout_contains "Server rejected the message"
 
 # Also from the winner.
 run_client "$PORT" "3/2/$GAME_ID"
-assert_stdout_contains "status=255"
+assert_stdout_contains "Server rejected the message"
 
 # -------------------------------------------------------------------------
 # Test 3: KEEP_ALIVE refreshes the retention window.
@@ -74,17 +74,17 @@ start_server "11" "$PORT" 2
 
 run_client "$PORT" "0/1"
 run_client "$PORT" "0/2"
-GAME_ID=$(echo "$CLIENT_STDOUT" | grep -oE 'game_id=[0-9]+' | head -1 | cut -d= -f2)
+GAME_ID=$(echo "$CLIENT_STDOUT" | grep -oE 'Game [0-9]+' | head -1 | awk '{print $2}')
 run_client "$PORT" "2/2/$GAME_ID/0"
-assert_stdout_contains "status=WIN_B"
+assert_stdout_contains "Status: player B wins"
 
 sleep 1.2
 run_client "$PORT" "3/1/$GAME_ID"
-assert_stdout_contains "status=WIN_B"
+assert_stdout_contains "Status: player B wins"
 
 sleep 1.2
 # Total sleep since WIN: ~2.4s + RTT, but only ~1.2s since last KA.
 run_client "$PORT" "3/2/$GAME_ID"
-assert_stdout_contains "status=WIN_B"
+assert_stdout_contains "Status: player B wins"
 
 echo "All finished_game_retention tests passed."

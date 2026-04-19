@@ -21,11 +21,11 @@ start_server "111" "$PORT" 30
 
 run_client "$PORT" "0/42"
 run_client "$PORT" "0/99"
-assert_stdout_contains "status=TURN_B"
-GAME_ID=$(echo "$CLIENT_STDOUT" | grep -oE 'game_id=[0-9]+' | head -1 | cut -d= -f2)
+assert_stdout_contains "Status: player B's turn"
+GAME_ID=$(echo "$CLIENT_STDOUT" | grep -oE 'Game [0-9]+' | head -1 | awk '{print $2}')
 
 run_client "$PORT" "4/99/$GAME_ID"
-assert_stdout_contains "status=WIN_A"
+assert_stdout_contains "Status: player A wins"
 
 # -------------------------------------------------------------------------
 # Test 2: A gives up on A's turn ⇒ WIN_B
@@ -38,15 +38,15 @@ start_server "111" "$PORT" 30
 
 run_client "$PORT" "0/42"
 run_client "$PORT" "0/99"
-GAME_ID=$(echo "$CLIENT_STDOUT" | grep -oE 'game_id=[0-9]+' | head -1 | cut -d= -f2)
+GAME_ID=$(echo "$CLIENT_STDOUT" | grep -oE 'Game [0-9]+' | head -1 | awk '{print $2}')
 
 # B knocks pin 0 ⇒ TURN_A.
 run_client "$PORT" "1/99/$GAME_ID/0"
-assert_stdout_contains "status=TURN_A"
+assert_stdout_contains "Status: player A's turn"
 
 # A gives up on TURN_A ⇒ WIN_B.
 run_client "$PORT" "4/42/$GAME_ID"
-assert_stdout_contains "status=WIN_B"
+assert_stdout_contains "Status: player B wins"
 
 # -------------------------------------------------------------------------
 # Test 3: A tries to GIVE_UP on B's turn ⇒ illegal, state unchanged.
@@ -58,17 +58,17 @@ start_server "111" "$PORT" 30
 
 run_client "$PORT" "0/42"
 run_client "$PORT" "0/99"
-assert_stdout_contains "status=TURN_B"
-GAME_ID=$(echo "$CLIENT_STDOUT" | grep -oE 'game_id=[0-9]+' | head -1 | cut -d= -f2)
+assert_stdout_contains "Status: player B's turn"
+GAME_ID=$(echo "$CLIENT_STDOUT" | grep -oE 'Game [0-9]+' | head -1 | awk '{print $2}')
 
 # A (not on turn) tries GIVE_UP.
 run_client "$PORT" "4/42/$GAME_ID"
 # Still TURN_B — no change.
-assert_stdout_contains "status=TURN_B"
-assert_stdout_contains "pawn_row=111"
+assert_stdout_contains "Status: player B's turn"
+assert_stdout_contains "Pawns: ###"
 # Must not be a WRONG_MSG; A is a valid participant.
-assert_stdout_not_contains "MessageWrong"
-assert_stdout_not_contains "status=255"
+assert_stdout_not_contains "Server rejected the message"
+assert_stdout_not_contains "Server rejected the message"
 
 # -------------------------------------------------------------------------
 # Test 4: GIVE_UP on a WAITING game (no TURN_X yet) from player A.
@@ -81,13 +81,13 @@ PORT=$(get_random_port)
 start_server "111" "$PORT" 30
 
 run_client "$PORT" "0/42"
-assert_stdout_contains "status=WAITING_FOR_OPPONENT"
-GAME_ID=$(echo "$CLIENT_STDOUT" | grep -oE 'game_id=[0-9]+' | head -1 | cut -d= -f2)
+assert_stdout_contains "Status: waiting for opponent"
+GAME_ID=$(echo "$CLIENT_STDOUT" | grep -oE 'Game [0-9]+' | head -1 | awk '{print $2}')
 
 run_client "$PORT" "4/42/$GAME_ID"
 # Still WAITING — GIVE_UP is illegal here; server returns unchanged state.
-assert_stdout_contains "status=WAITING_FOR_OPPONENT"
-assert_stdout_not_contains "status=255"
+assert_stdout_contains "Status: waiting for opponent"
+assert_stdout_not_contains "Server rejected the message"
 assert_stdout_not_contains "status=WIN_"
 
 # -------------------------------------------------------------------------
@@ -100,17 +100,17 @@ start_server "11" "$PORT" 30
 
 run_client "$PORT" "0/1"
 run_client "$PORT" "0/2"
-GAME_ID=$(echo "$CLIENT_STDOUT" | grep -oE 'game_id=[0-9]+' | head -1 | cut -d= -f2)
+GAME_ID=$(echo "$CLIENT_STDOUT" | grep -oE 'Game [0-9]+' | head -1 | awk '{print $2}')
 # B wins immediately via MOVE_2.
 run_client "$PORT" "2/2/$GAME_ID/0"
-assert_stdout_contains "status=WIN_B"
+assert_stdout_contains "Status: player B wins"
 
 # B tries to GIVE_UP after WIN_B ⇒ state stays WIN_B.
 run_client "$PORT" "4/2/$GAME_ID"
-assert_stdout_contains "status=WIN_B"
+assert_stdout_contains "Status: player B wins"
 # A tries to GIVE_UP after WIN_B ⇒ still WIN_B.
 run_client "$PORT" "4/1/$GAME_ID"
-assert_stdout_contains "status=WIN_B"
+assert_stdout_contains "Status: player B wins"
 
 # -------------------------------------------------------------------------
 # Test 6: GIVE_UP from a player NOT in the game ⇒ MSG_WRONG_MSG.
@@ -122,10 +122,10 @@ start_server "111" "$PORT" 30
 
 run_client "$PORT" "0/42"
 run_client "$PORT" "0/99"
-GAME_ID=$(echo "$CLIENT_STDOUT" | grep -oE 'game_id=[0-9]+' | head -1 | cut -d= -f2)
+GAME_ID=$(echo "$CLIENT_STDOUT" | grep -oE 'Game [0-9]+' | head -1 | awk '{print $2}')
 
 run_client "$PORT" "4/12345/$GAME_ID"
-assert_stdout_contains "MessageWrong"
-assert_stdout_contains "status=255"
+assert_stdout_contains "Server rejected the message"
+assert_stdout_contains "Server rejected the message"
 
 echo "All give_up_comprehensive tests passed."

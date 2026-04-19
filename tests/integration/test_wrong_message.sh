@@ -19,17 +19,17 @@ assert_exit_code 0
 # Now try a move on a game that doesn't exist
 run_client "$PORT" "1/42/99999/0"
 assert_exit_code 0
-assert_stdout_contains "status=255"
-assert_stdout_contains "MessageWrong"
+assert_stdout_contains "Server rejected the message"
+assert_stdout_contains "Server rejected the message"
 
 echo "Test 2: KEEP_ALIVE with unknown player for existing game gets MSG_WRONG_MSG"
 # Extract game_id from the join
 run_client "$PORT" "0/42"
 assert_exit_code 0
-GAME_ID=$(echo "$CLIENT_STDOUT" | grep -oE "game_id=[0-9]+" | head -1 | cut -d= -f2)
+GAME_ID=$(echo "$CLIENT_STDOUT" | grep -oE "Game [0-9]+" | head -1 | awk '{print $2}')
 # Player 9999 is not in this game
 run_client "$PORT" "3/9999/$GAME_ID"
 assert_exit_code 0
-assert_stdout_contains "status=255"
+assert_stdout_contains "Server rejected the message"
 
 echo "All wrong message tests passed."

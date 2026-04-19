@@ -17,8 +17,9 @@
 using namespace kayles::protocol;
 using namespace kayles::parse;
 
+constexpr std::string_view PROG = "kayles_client";
 constexpr std::string_view USAGE_STR =
-    "Usage: ./kayles_client -p <port> -a <address> -m <message> -t <client_timeout>\n";
+    "usage: kayles_client -p <port> -a <address> -m <message> -t <client_timeout>\n";
 
 int main(int argc, char *argv[]) {
     std::optional<address_t> opt_address;
@@ -30,41 +31,41 @@ int main(int argc, char *argv[]) {
     while ((opt = getopt(argc, argv, "a:p:m:t:")) != -1) {
         switch (opt) {
             case 'a': {
-                if (!assign_or_report(opt_address, parse_address(optarg))) {
+                if (!assign_or_report(PROG, opt_address, parse_address(optarg))) {
                     return 1;
                 }
                 break;
             }
             case 'p': {
-                if (!assign_or_report(opt_port, parse_port(optarg))) {
+                if (!assign_or_report(PROG, opt_port, parse_port(optarg))) {
                     return 1;
                 }
                 if (opt_port.value() == 0) {
-                    std::cerr << "Port number must be non-zero for client messages.\n";
+                    std::cerr << PROG << ": arg: port must be non-zero\n";
                     return 1;
                 }
                 break;
             }
             case 't': {
-                if (!assign_or_report(opt_timeout, parse_timeout(optarg))) {
+                if (!assign_or_report(PROG, opt_timeout, parse_timeout(optarg))) {
                     return 1;
                 }
                 break;
             }
             case 'm': {
-                if (!assign_or_report(opt_message, parse_client_message(optarg))) {
+                if (!assign_or_report(PROG, opt_message, parse_client_message(optarg))) {
                     return 1;
                 }
                 break;
             }
             default: {
-                std::cerr << USAGE_STR;
+                std::cerr << PROG << ": " << USAGE_STR;
                 return 1;
             }
         }
     }
     if (!opt_address || !opt_port || !opt_message || !opt_timeout || optind < argc) {
-        std::cerr << USAGE_STR;
+        std::cerr << PROG << ": " << USAGE_STR;
         return 1;
     }
 
@@ -80,7 +81,7 @@ int main(int argc, char *argv[]) {
 
     int sock_fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock_fd < 0) {
-        std::cerr << "Failed to create socket.\n";
+        std::cerr << PROG << ": socket: " << strerror(errno) << "\n";
         return 1;
     }
 
@@ -89,7 +90,7 @@ int main(int argc, char *argv[]) {
     timeout.tv_sec = client_timeout.count();
     timeout.tv_usec = 0;
     if (setsockopt(sock_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
-        std::cerr << "Failed to set socket timeout.\n";
+        std::cerr << PROG << ": setsockopt: " << strerror(errno) << "\n";
         close(sock_fd);
         return 1;
     }
@@ -98,11 +99,12 @@ int main(int argc, char *argv[]) {
     ssize_t sent_bytes = sendto(sock_fd, wire.data(), wire.size(), 0,
                                 (struct sockaddr *)&server_addr, sizeof(server_addr));
     if (sent_bytes < 0) {
-        std::cerr << "Failed to send message to server.\n";
+        std::cerr << PROG << ": sendto: " << strerror(errno) << "\n";
         close(sock_fd);
         return 1;
     } else if (static_cast<size_t>(sent_bytes) != wire.size()) {
-        std::cerr << "Incomplete message sent to server.\n";
+        std::cerr << PROG << ": sendto: short write (" << sent_bytes << " of " << wire.size()
+                  << " bytes)\n";
         close(sock_fd);
         return 1;
     }
@@ -118,7 +120,7 @@ int main(int argc, char *argv[]) {
             close(sock_fd);
             return 0;
         } else {
-            std::cerr << "Failed to receive response from server.\n";
+            std::cerr << PROG << ": recvfrom: " << strerror(errno) << "\n";
             close(sock_fd);
             return 1;
         }
@@ -127,7 +129,7 @@ int main(int argc, char *argv[]) {
     // Verify response came from the server we sent to
     if (from_addr.sin_addr.s_addr != server_addr.sin_addr.s_addr ||
         from_addr.sin_port != server_addr.sin_port) {
-        std::cerr << "Response from unexpected source, ignoring.\n";
+        std::cerr << PROG << ": source: response from unexpected peer\n";
         close(sock_fd);
         return 1;
     }
@@ -136,7 +138,7 @@ int main(int argc, char *argv[]) {
                                       static_cast<size_t>(recv_bytes));
     auto parsed = deserialize_server_message(response);
     if (!parsed) {
-        std::cerr << "Malformed server response: " << parsed.error().what() << "\n";
+        std::cerr << PROG << ": response: " << parsed.error().what() << "\n";
         close(sock_fd);
         return 1;
     }

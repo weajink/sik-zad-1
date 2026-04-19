@@ -13,9 +13,9 @@
 using namespace kayles::server;
 using namespace kayles::parse;
 
+constexpr std::string_view PROG = "kayles_server";
 constexpr std::string_view USAGE_STR =
-    "Usage: ./kayles_server -r <row> -p <port> -a <address> -t "
-    "<server_timeout>\n";
+    "usage: kayles_server -r <row> -p <port> -a <address> -t <server_timeout>\n";
 
 int main(int argc, char *argv[]) {
     std::optional<pawn_row_t> opt_row;
@@ -27,37 +27,37 @@ int main(int argc, char *argv[]) {
     while ((opt = getopt(argc, argv, "r:a:p:t:")) != -1) {
         switch (opt) {
             case 'r': {
-                if (!assign_or_report(opt_row, parse_pawn_row(optarg))) {
+                if (!assign_or_report(PROG, opt_row, parse_pawn_row(optarg))) {
                     return 1;
                 }
                 break;
             }
             case 'a': {
-                if (!assign_or_report(opt_address, parse_address(optarg))) {
+                if (!assign_or_report(PROG, opt_address, parse_address(optarg))) {
                     return 1;
                 }
                 break;
             }
             case 'p': {
-                if (!assign_or_report(opt_port, parse_port(optarg))) {
+                if (!assign_or_report(PROG, opt_port, parse_port(optarg))) {
                     return 1;
                 }
                 break;
             }
             case 't': {
-                if (!assign_or_report(opt_timeout, parse_timeout(optarg))) {
+                if (!assign_or_report(PROG, opt_timeout, parse_timeout(optarg))) {
                     return 1;
                 }
                 break;
             }
             default: {
-                std::cerr << USAGE_STR;
+                std::cerr << PROG << ": " << USAGE_STR;
                 return 1;
             }
         }
     }
     if (!opt_row || !opt_port || !opt_address || !opt_timeout || optind < argc) {
-        std::cerr << USAGE_STR;
+        std::cerr << PROG << ": " << USAGE_STR;
         return 1;
     }
 
@@ -68,7 +68,7 @@ int main(int argc, char *argv[]) {
         server.start();
         server.run();
     } catch (const std::exception &e) {
-        std::cerr << "Server error: " << e.what() << "\n";
+        std::cerr << PROG << ": " << e.what() << "\n";
         return 1;
     }
     return 0;

@@ -843,16 +843,6 @@ TEST(ProtocolRoundTrip, MessageWrongErrorIndexBoundary) {
 // ProtocolPrint — smoke tests for operator<<
 // ===========================================================================
 
-TEST(ProtocolPrint, ClientMessageTypeNonEmpty) {
-    for (auto t :
-         {ClientMessageType::MSG_JOIN, ClientMessageType::MSG_MOVE_1, ClientMessageType::MSG_MOVE_2,
-          ClientMessageType::MSG_KEEP_ALIVE, ClientMessageType::MSG_GIVE_UP}) {
-        std::ostringstream os;
-        os << t;
-        EXPECT_FALSE(os.str().empty());
-    }
-}
-
 TEST(ProtocolPrint, GameStatusNonEmpty) {
     for (auto s : {GameStatus::WAITING_FOR_OPPONENT, GameStatus::TURN_A, GameStatus::TURN_B,
                    GameStatus::WIN_A, GameStatus::WIN_B}) {
@@ -860,27 +850,6 @@ TEST(ProtocolPrint, GameStatusNonEmpty) {
         os << s;
         EXPECT_FALSE(os.str().empty());
     }
-}
-
-TEST(ProtocolPrint, ClientMessageJoinNonEmpty) {
-    ClientMessage m{ClientMessageType::MSG_JOIN, 42u, 0u, 0u};
-    std::ostringstream os;
-    os << m;
-    EXPECT_FALSE(os.str().empty());
-}
-
-TEST(ProtocolPrint, ClientMessageMove1NonEmpty) {
-    ClientMessage m{ClientMessageType::MSG_MOVE_1, 42u, 7u, 3u};
-    std::ostringstream os;
-    os << m;
-    EXPECT_FALSE(os.str().empty());
-}
-
-TEST(ProtocolPrint, ClientMessageKeepAliveNonEmpty) {
-    ClientMessage m{ClientMessageType::MSG_KEEP_ALIVE, 42u, 7u, 0u};
-    std::ostringstream os;
-    os << m;
-    EXPECT_FALSE(os.str().empty());
 }
 
 TEST(ProtocolPrint, GameStateNonEmpty) {

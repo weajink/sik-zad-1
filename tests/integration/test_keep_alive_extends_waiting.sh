@@ -24,16 +24,16 @@ start_server "111" "$PORT" 2
 echo "Test 1: A joins ⇒ WAITING game created"
 run_client "$PORT" "0/42"
 assert_exit_code 0
-assert_stdout_contains "status=WAITING_FOR_OPPONENT"
-GAME_ID=$(echo "$CLIENT_STDOUT" | grep -oE 'game_id=[0-9]+' | head -1 | cut -d= -f2)
+assert_stdout_contains "Status: waiting for opponent"
+GAME_ID=$(echo "$CLIENT_STDOUT" | grep -oE 'Game [0-9]+' | head -1 | awk '{print $2}')
 
 echo "Test 2: Sleep 1.2s (< 2s timeout), then A sends KEEP_ALIVE"
 sleep 1.2
 run_client "$PORT" "3/42/$GAME_ID"
 assert_exit_code 0
 # KEEP_ALIVE should return the same WAITING game state.
-assert_stdout_contains "status=WAITING_FOR_OPPONENT"
-if ! echo "$CLIENT_STDOUT" | grep -qE "game_id=$GAME_ID\b"; then
+assert_stdout_contains "Status: waiting for opponent"
+if ! echo "$CLIENT_STDOUT" | grep -qE "Game $GAME_ID\b"; then
     echo "  FAIL: KEEP_ALIVE did not return game_id=$GAME_ID"
     echo "  STDOUT: $CLIENT_STDOUT"
     exit 1
@@ -45,10 +45,10 @@ sleep 1.2
 # game was incorrectly discarded, B would create a new WAITING game instead.
 run_client "$PORT" "0/99"
 assert_exit_code 0
-assert_stdout_contains "status=TURN_B"
-assert_stdout_contains "player_a=42"
-assert_stdout_contains "player_b=99"
-NEW_GAME_ID=$(echo "$CLIENT_STDOUT" | grep -oE 'game_id=[0-9]+' | head -1 | cut -d= -f2)
+assert_stdout_contains "Status: player B's turn"
+assert_stdout_contains "Player A: 42$"
+assert_stdout_contains "Player B: 99$"
+NEW_GAME_ID=$(echo "$CLIENT_STDOUT" | grep -oE 'Game [0-9]+' | head -1 | awk '{print $2}')
 if [[ "$NEW_GAME_ID" != "$GAME_ID" ]]; then
     echo "  FAIL: expected B to pair with game_id=$GAME_ID, got $NEW_GAME_ID"
     exit 1
